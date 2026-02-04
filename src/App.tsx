@@ -6,7 +6,7 @@ import "./App.css";
 function App() {
   const [transcription, setTranscription] = useState("");
   const [isRecording, setIsRecording] = useState(false);
-  const [status, setStatus] = useState("Ready");
+  const [status, setStatus] = useState("Awaiting thy voice");
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [error, setError] = useState("");
@@ -18,12 +18,12 @@ function App() {
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
         setIsRecording(e.payload);
-        setStatus(e.payload ? "Recording..." : "Processing...");
+        setStatus(e.payload ? "Hearkening..." : "The quill doth write...");
         if (e.payload) setError("");
       }),
       listen<string>("transcription", (e) => {
         setTranscription(e.payload);
-        setStatus("Ready");
+        setStatus("Awaiting thy voice");
       }),
       listen<string>("transcription-status", (e) => setStatus(e.payload)),
       listen<string>("error", (e) => {
@@ -39,8 +39,8 @@ function App() {
     try {
       await invoke("copy_to_clipboard", { text: transcription });
       setError("");
-      setStatus("Copied!");
-      setTimeout(() => setStatus("Ready"), 1500);
+      setStatus("'Tis copied!");
+      setTimeout(() => setStatus("Awaiting thy voice"), 1500);
     } catch (e) {
       setError(String(e));
     }
@@ -76,7 +76,7 @@ function App() {
           />
         ) : (
           <div className="transcription">
-            {transcription || "Press Cmd+Shift+Space to record"}
+            {transcription || "Speak unto the aether with Cmd+Shift+Space"}
           </div>
         )}
       </div>
@@ -84,18 +84,18 @@ function App() {
       <div className="actions">
         {isEditing ? (
           <>
-            <button onClick={handleSaveEdit} className="btn primary">Paste</button>
-            <button onClick={() => setIsEditing(false)} className="btn">Cancel</button>
+            <button onClick={handleSaveEdit} className="btn primary">Inscribe</button>
+            <button onClick={() => setIsEditing(false)} className="btn">Withdraw</button>
           </>
         ) : (
           <>
-            <button onClick={handleCopy} className="btn" disabled={!transcription}>Copy</button>
-            <button onClick={() => { setEditText(transcription); setIsEditing(true); }} className="btn" disabled={!transcription}>Edit</button>
+            <button onClick={handleCopy} className="btn" disabled={!transcription}>Duplicate</button>
+            <button onClick={() => { setEditText(transcription); setIsEditing(true); }} className="btn" disabled={!transcription}>Amend</button>
           </>
         )}
       </div>
 
-      <div className="hint">Cmd+Shift+Space to record</div>
+      <div className="hint">Summon the scribe: Cmd+Shift+Space</div>
     </div>
   );
 }

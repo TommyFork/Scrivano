@@ -1,154 +1,535 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCRIVANO - The Scribe's Codex
+   A Renaissance-inspired voice transcription interface
+   In the spirit of Leonardo da Vinci's notebooks
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=MedievalSharp&display=swap');
+
 :root {
-  --bg: rgba(255, 255, 255, 0.95);
-  --text: #374151;
-  --text-muted: #9ca3af;
-  --border: rgba(0, 0, 0, 0.1);
-  --btn-bg: #fff;
-  --btn-border: #d1d5db;
-  --error-bg: #fef2f2;
-  --error-border: #fecaca;
-  --input-bg: #fff;
+  /* Parchment & Paper */
+  --parchment: #f4e4c8;
+  --parchment-dark: #e8d4a8;
+  --parchment-aged: #dcc9a3;
+  --vellum: #faf3e3;
 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  /* Inks & Writing */
+  --ink-dark: #2c1810;
+  --ink-sepia: #5c4033;
+  --ink-brown: #6b4423;
+  --ink-faded: #8b7355;
+
+  /* Illumination & Gold */
+  --gold: #c9a227;
+  --gold-bright: #d4af37;
+  --gold-dark: #a67c00;
+
+  /* Wax & Seals */
+  --wax-red: #8b2500;
+  --wax-red-light: #a52a2a;
+  --wax-shadow: #5c1a00;
+
+  /* Verdigris & Aged Metal */
+  --verdigris: #4a7c59;
+  --aged-bronze: #8b7355;
+
+  /* Error - Faded crimson */
+  --error-ink: #7c2d12;
+  --error-bg: rgba(139, 37, 0, 0.08);
+
+  font-family: 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+  font-size: 15px;
+  line-height: 1.6;
+  font-weight: 500;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: rgba(30, 30, 30, 0.95);
-    --text: #e5e7eb;
-    --text-muted: #6b7280;
-    --border: rgba(255, 255, 255, 0.1);
-    --btn-bg: #374151;
-    --btn-border: #4b5563;
-    --error-bg: rgba(220, 38, 38, 0.1);
-    --error-border: rgba(220, 38, 38, 0.3);
-    --input-bg: #1f1f1f;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+/* ═══════════════════════════════════════════════════════════════════════════
+   PARCHMENT CONTAINER
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 16px;
-  background: var(--bg);
-  border-radius: 12px;
-  backdrop-filter: blur(20px);
-  border: 1px solid var(--border);
+  padding: 20px;
+  background:
+    /* Subtle paper grain texture */
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"),
+    /* Aged parchment gradient */
+    radial-gradient(ellipse at 30% 20%, var(--vellum) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, var(--parchment-aged) 0%, transparent 40%),
+    linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  background-blend-mode: overlay, normal, normal, normal;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+
+  /* Ornate border effect */
+  border: 3px solid var(--ink-faded);
+  box-shadow:
+    inset 0 0 30px rgba(92, 64, 51, 0.15),
+    inset 0 0 60px rgba(92, 64, 51, 0.08),
+    0 4px 20px rgba(44, 24, 16, 0.3);
 }
+
+/* Decorative corner flourishes */
+.container::before,
+.container::after {
+  content: '❧';
+  position: absolute;
+  font-size: 24px;
+  color: var(--ink-faded);
+  opacity: 0.6;
+  font-family: 'MedievalSharp', serif;
+}
+
+.container::before {
+  top: 6px;
+  left: 10px;
+}
+
+.container::after {
+  bottom: 6px;
+  right: 10px;
+  transform: rotate(180deg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HEADER - THE SCRIPTORIUM STATUS
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--ink-faded);
+  position: relative;
 }
 
+/* Decorative line flourish */
+.header::after {
+  content: '• • •';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  color: var(--ink-faded);
+  letter-spacing: 4px;
+  background: var(--parchment);
+  padding: 0 10px;
+}
+
+/* Quill/Inkwell Status Indicator */
 .status-indicator {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background-color: #10b981;
+  background:
+    radial-gradient(circle at 30% 30%, var(--verdigris) 0%, #2d5a3d 100%);
+  border: 2px solid var(--ink-brown);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.3),
+    0 2px 4px rgba(44, 24, 16, 0.3);
+  position: relative;
 }
 
+/* Ready state - Green inkwell (full) */
+.status-indicator::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+}
+
+/* Recording state - Red wax melting */
 .status-indicator.recording {
-  background-color: #ef4444;
-  animation: pulse 1s infinite;
+  background:
+    radial-gradient(circle at 30% 30%, var(--wax-red-light) 0%, var(--wax-red) 70%, var(--wax-shadow) 100%);
+  animation: waxGlow 1.5s ease-in-out infinite;
+  border-color: var(--wax-shadow);
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes waxGlow {
+  0%, 100% {
+    box-shadow:
+      inset 0 2px 4px rgba(255, 255, 255, 0.3),
+      0 0 8px rgba(139, 37, 0, 0.5),
+      0 0 16px rgba(139, 37, 0, 0.3);
+  }
+  50% {
+    box-shadow:
+      inset 0 2px 4px rgba(255, 255, 255, 0.4),
+      0 0 12px rgba(165, 42, 42, 0.7),
+      0 0 24px rgba(165, 42, 42, 0.4);
+  }
 }
 
 .status-text {
-  font-size: 12px;
-  color: var(--text-muted);
-  font-weight: 500;
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-sepia);
+  text-transform: uppercase;
+  letter-spacing: 2px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   ERROR SCROLL
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .error {
-  margin-top: 8px;
-  padding: 8px 12px;
-  background-color: var(--error-bg);
-  border: 1px solid var(--error-border);
-  border-radius: 6px;
-  color: #dc2626;
-  font-size: 12px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--error-bg);
+  border: 1px solid var(--wax-red);
+  border-left: 3px solid var(--wax-red);
+  border-radius: 2px;
+  color: var(--error-ink);
+  font-size: 13px;
+  font-style: italic;
+  position: relative;
 }
+
+.error::before {
+  content: '⚠';
+  margin-right: 8px;
+  font-style: normal;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MANUSCRIPT CONTENT AREA
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .content {
   flex: 1;
-  margin-top: 12px;
+  margin-top: 16px;
   overflow-y: auto;
+  padding-right: 8px;
+
+  /* Custom scrollbar - aged brass */
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-faded) var(--parchment-dark);
+}
+
+.content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.content::-webkit-scrollbar-track {
+  background: var(--parchment-dark);
+  border-radius: 4px;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--ink-faded), var(--ink-brown));
+  border-radius: 4px;
+  border: 1px solid var(--parchment-dark);
 }
 
 .transcription {
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--text);
+  font-family: 'Cormorant Garamond', 'Palatino Linotype', serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink-dark);
   white-space: pre-wrap;
   overflow-wrap: break-word;
+
+  /* Subtle text shadow for ink effect */
+  text-shadow: 0 0 1px rgba(44, 24, 16, 0.1);
 }
+
+/* Placeholder text - italic instruction */
+.transcription:empty::before,
+.transcription:not(:empty) {
+  font-style: normal;
+}
+
+/* When showing placeholder */
+.content .transcription:first-child:last-child {
+  color: var(--ink-faded);
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EDIT AREA - THE SCRIBE'S DESK
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .edit-area {
   width: 100%;
   height: 100%;
-  padding: 8px;
-  font-family: inherit;
-  font-size: 15px;
-  line-height: 1.6;
-  border: 1px solid var(--btn-border);
-  border-radius: 6px;
+  padding: 12px;
+  font-family: 'Cormorant Garamond', 'Palatino Linotype', serif;
+  font-size: 16px;
+  line-height: 1.75;
+  border: 2px solid var(--ink-faded);
+  border-radius: 2px;
   resize: none;
   outline: none;
-  background: var(--input-bg);
-  color: var(--text);
+  background:
+    /* Lined paper effect */
+    repeating-linear-gradient(
+      transparent,
+      transparent 27px,
+      rgba(92, 64, 51, 0.08) 27px,
+      rgba(92, 64, 51, 0.08) 28px
+    ),
+    var(--vellum);
+  color: var(--ink-dark);
+  box-shadow:
+    inset 0 2px 8px rgba(92, 64, 51, 0.1),
+    0 2px 4px rgba(44, 24, 16, 0.1);
 }
 
 .edit-area:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--gold-dark);
+  box-shadow:
+    inset 0 2px 8px rgba(92, 64, 51, 0.1),
+    0 0 0 2px rgba(201, 162, 39, 0.2),
+    0 2px 4px rgba(44, 24, 16, 0.1);
 }
+
+.edit-area::placeholder {
+  color: var(--ink-faded);
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACTIONS - WAX SEAL BUTTONS
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ink-faded);
+  position: relative;
+}
+
+/* Decorative separator */
+.actions::before {
+  content: '✦';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--gold);
+  background: var(--parchment);
+  padding: 0 8px;
 }
 
 .btn {
   flex: 1;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid var(--btn-border);
-  border-radius: 6px;
-  background: var(--btn-bg);
-  color: var(--text);
+  padding: 10px 16px;
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  border: 2px solid var(--ink-brown);
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  color: var(--ink-sepia);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: all 0.2s ease;
+  box-shadow:
+    0 2px 4px rgba(44, 24, 16, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  position: relative;
+  overflow: hidden;
 }
 
-.btn:hover:not(:disabled) { opacity: 0.8; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.4s ease;
+}
 
+.btn:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.btn:hover:not(:disabled) {
+  background:
+    linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  box-shadow:
+    0 4px 8px rgba(44, 24, 16, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 1px 2px rgba(44, 24, 16, 0.2),
+    inset 0 2px 4px rgba(44, 24, 16, 0.1);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(30%);
+}
+
+/* Primary Button - Gold Illuminated */
 .btn.primary {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #fff;
+  background:
+    linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 50%, var(--gold-dark) 100%);
+  border-color: var(--gold-dark);
+  color: var(--ink-dark);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 2px 4px rgba(166, 124, 0, 0.3),
+    0 4px 8px rgba(44, 24, 16, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(44, 24, 16, 0.2);
 }
+
+.btn.primary:hover:not(:disabled) {
+  background:
+    linear-gradient(180deg, #e0c040 0%, var(--gold-bright) 50%, var(--gold) 100%);
+  box-shadow:
+    0 4px 8px rgba(166, 124, 0, 0.4),
+    0 6px 12px rgba(44, 24, 16, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(44, 24, 16, 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HINT - SCRIPTED INSTRUCTION
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .hint {
-  margin-top: 12px;
-  font-size: 11px;
-  color: var(--text-muted);
+  margin-top: 14px;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ink-faded);
   text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.hint::before {
+  content: '☞ ';
+  font-style: normal;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE - AGED VELLUM BY CANDLELIGHT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --parchment: #3d3425;
+    --parchment-dark: #2e2820;
+    --parchment-aged: #352e23;
+    --vellum: #4a4035;
+
+    --ink-dark: #e8dcc8;
+    --ink-sepia: #c9b896;
+    --ink-brown: #a89070;
+    --ink-faded: #8b7860;
+
+    --gold: #d4a520;
+    --gold-bright: #e8b830;
+    --gold-dark: #b08918;
+
+    --error-ink: #e8a090;
+    --error-bg: rgba(165, 42, 42, 0.15);
+  }
+
+  .container {
+    background:
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E"),
+      radial-gradient(ellipse at 30% 20%, rgba(74, 64, 53, 0.5) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(46, 40, 32, 0.8) 0%, transparent 40%),
+      linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+    box-shadow:
+      inset 0 0 40px rgba(0, 0, 0, 0.3),
+      inset 0 0 80px rgba(0, 0, 0, 0.2),
+      0 4px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .edit-area {
+    background:
+      repeating-linear-gradient(
+        transparent,
+        transparent 27px,
+        rgba(200, 180, 150, 0.05) 27px,
+        rgba(200, 180, 150, 0.05) 28px
+      ),
+      var(--vellum);
+    box-shadow:
+      inset 0 2px 8px rgba(0, 0, 0, 0.2),
+      0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn {
+    background:
+      linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .btn:hover:not(:disabled) {
+    background:
+      linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  }
+
+  .btn.primary {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      0 4px 8px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .container::before,
+  .container::after {
+    opacity: 0.4;
+  }
+
+  .content::-webkit-scrollbar-track {
+    background: var(--parchment-dark);
+  }
+
+  .content::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--ink-faded), var(--ink-brown));
+    border-color: var(--parchment-dark);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SELECTION STYLING
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+::selection {
+  background: rgba(201, 162, 39, 0.3);
+  color: var(--ink-dark);
+}
+
+::-moz-selection {
+  background: rgba(201, 162, 39, 0.3);
+  color: var(--ink-dark);
 }
