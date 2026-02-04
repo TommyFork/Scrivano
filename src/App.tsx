@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
 function App() {
@@ -33,6 +34,17 @@ function App() {
     ];
 
     return () => { unlisteners.forEach((p) => p.then((fn) => fn())); };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        getCurrentWindow().hide();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleCopy = async () => {
