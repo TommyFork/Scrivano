@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
@@ -22,7 +22,6 @@ function App() {
   const [currentShortcut, setCurrentShortcut] = useState<ShortcutInfo | null>(null);
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   const [pendingShortcut, setPendingShortcut] = useState<{ modifiers: string[]; key: string } | null>(null);
-  const shortcutInputRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     invoke<string>("get_transcription").then(setTranscription);
@@ -71,15 +70,8 @@ function App() {
     }
   };
 
-  // Auto-focus the shortcut input when recording starts
-  useEffect(() => {
-    if (isRecordingShortcut && shortcutInputRef.current) {
-      shortcutInputRef.current.focus();
-    }
-  }, [isRecordingShortcut]);
-
   // Shortcut recording handler
-  const handleShortcutKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleShortcutKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -204,15 +196,17 @@ function App() {
               Press and hold this key combination to record thy voice
             </p>
 
-            <div
-              ref={shortcutInputRef}
-              className={`shortcut-display ${isRecordingShortcut ? "shortcut-display-recording" : ""}`}
-              tabIndex={isRecordingShortcut ? 0 : -1}
-              onKeyDown={isRecordingShortcut ? handleShortcutKeyDown : undefined}
-              onBlur={() => isRecordingShortcut && setIsRecordingShortcut(false)}
-            >
+            <div className={`shortcut-display ${isRecordingShortcut ? "shortcut-display-recording" : ""}`}>
               {isRecordingShortcut ? (
-                <span className="shortcut-recording">Press thy keys...</span>
+                <input
+                  type="text"
+                  className="shortcut-input"
+                  placeholder="Press thy keys..."
+                  onKeyDown={handleShortcutKeyDown}
+                  onBlur={() => setIsRecordingShortcut(false)}
+                  autoFocus
+                  readOnly
+                />
               ) : pendingShortcut ? (
                 <span className="shortcut-pending">{formatPendingShortcut(pendingShortcut)}</span>
               ) : (

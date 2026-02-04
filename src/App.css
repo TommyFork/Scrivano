@@ -647,6 +647,24 @@
   outline: none;
 }
 
+.shortcut-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 16px;
+  font-style: italic;
+  color: var(--wax-red);
+  text-align: center;
+  outline: none;
+  caret-color: transparent;
+}
+
+.shortcut-input::placeholder {
+  color: var(--wax-red);
+  opacity: 1;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
