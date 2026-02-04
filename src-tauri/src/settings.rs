@@ -17,9 +17,48 @@ impl Default for ShortcutConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionProvider {
+    OpenAI,
+    Groq,
+}
+
+impl Default for TranscriptionProvider {
+    fn default() -> Self {
+        Self::OpenAI
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ApiKeysConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openai_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub groq_api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionConfig {
+    pub provider: TranscriptionProvider,
+}
+
+impl Default for TranscriptionConfig {
+    fn default() -> Self {
+        Self {
+            provider: TranscriptionProvider::OpenAI,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
+    #[serde(default)]
     pub shortcut: ShortcutConfig,
+    #[serde(default)]
+    pub api_keys: ApiKeysConfig,
+    #[serde(default)]
+    pub transcription: TranscriptionConfig,
 }
 
 fn get_settings_path() -> PathBuf {
@@ -36,12 +75,10 @@ pub fn load_settings() -> Settings {
 
     if path.exists() {
         match fs::read_to_string(&path) {
-            Ok(content) => {
-                match serde_json::from_str(&content) {
-                    Ok(settings) => return settings,
-                    Err(e) => eprintln!("Failed to parse settings: {}", e),
-                }
-            }
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(settings) => return settings,
+                Err(e) => eprintln!("Failed to parse settings: {}", e),
+            },
             Err(e) => eprintln!("Failed to read settings file: {}", e),
         }
     }
@@ -55,8 +92,7 @@ pub fn save_settings(settings: &Settings) -> Result<(), String> {
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
-    fs::write(&path, content)
-        .map_err(|e| format!("Failed to write settings file: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Failed to write settings file: {}", e))?;
 
     Ok(())
 }
@@ -194,4 +230,47 @@ pub fn format_shortcut_display(config: &ShortcutConfig) -> String {
     };
 
     format!("{}{}", parts.join(""), key_display)
+}
+
+/// Get API key for a provider, preferring settings over environment variables
+pub fn get_api_key_for_provider(
+    provider: &TranscriptionProvider,
+    settings: &Settings,
+) -> Option<String> {
+    match provider {
+        TranscriptionProvider::OpenAI => settings
+            .api_keys
+            .openai_api_key
+            .clone()
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
+        TranscriptionProvider::Groq => settings
+            .api_keys
+            .groq_api_key
+            .clone()
+            .or_else(|| std::env::var("GROQ_API_KEY").ok()),
+    }
+}
+
+/// Get the model name for a provider
+pub fn get_model_for_provider(provider: &TranscriptionProvider) -> &'static str {
+    match provider {
+        TranscriptionProvider::OpenAI => "whisper-1",
+        TranscriptionProvider::Groq => "whisper-large-v3-turbo",
+    }
+}
+
+/// Get the endpoint URL for a provider
+pub fn get_endpoint_for_provider(provider: &TranscriptionProvider) -> &'static str {
+    match provider {
+        TranscriptionProvider::OpenAI => "https://api.openai.com/v1/audio/transcriptions",
+        TranscriptionProvider::Groq => "https://api.groq.com/openai/v1/audio/transcriptions",
+    }
+}
+
+/// Get display name for a provider
+pub fn get_provider_display_name(provider: &TranscriptionProvider) -> &'static str {
+    match provider {
+        TranscriptionProvider::OpenAI => "OpenAI Whisper",
+        TranscriptionProvider::Groq => "Groq Whisper",
+    }
 }

@@ -5,13 +5,12 @@ mod transcription;
 
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
-use settings::{Settings, ShortcutConfig};
+use settings::{Settings, ShortcutConfig, TranscriptionProvider};
 use std::sync::Mutex;
 use tauri::{
-    AppHandle, Emitter, Manager,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    ActivationPolicy,
+    ActivationPolicy, AppHandle, Emitter, Manager,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -25,9 +24,13 @@ struct RecorderState {
     handle: Option<RecordingHandle>,
 }
 
-struct ShortcutState {
+struct ShortcutStateInner {
     current_shortcut: Option<Shortcut>,
     config: ShortcutConfig,
+}
+
+struct SettingsState {
+    settings: Settings,
 }
 
 #[tauri::command]
@@ -58,7 +61,7 @@ struct ShortcutInfo {
 }
 
 #[tauri::command]
-fn get_shortcut(state: tauri::State<'_, Mutex<ShortcutState>>) -> ShortcutInfo {
+fn get_shortcut(state: tauri::State<'_, Mutex<ShortcutStateInner>>) -> ShortcutInfo {
     let config = state.lock().unwrap().config.clone();
     ShortcutInfo {
         modifiers: config.modifiers.clone(),
@@ -95,7 +98,7 @@ fn set_shortcut(
 
     // Unregister the old shortcut
     {
-        let shortcut_state = app.state::<Mutex<ShortcutState>>();
+        let shortcut_state = app.state::<Mutex<ShortcutStateInner>>();
         let state = shortcut_state.lock().unwrap();
         if let Some(old_shortcut) = &state.current_shortcut {
             let _ = app.global_shortcut().unregister(old_shortcut.clone());
@@ -109,7 +112,7 @@ fn set_shortcut(
 
     // Update the state
     {
-        let shortcut_state = app.state::<Mutex<ShortcutState>>();
+        let shortcut_state = app.state::<Mutex<ShortcutStateInner>>();
         let mut state = shortcut_state.lock().unwrap();
         state.current_shortcut = Some(new_shortcut);
         state.config = new_config.clone();
@@ -127,37 +130,209 @@ fn set_shortcut(
     })
 }
 
-fn get_api_key() -> Result<String, String> {
-    std::env::var("OPENAI_API_KEY")
-        .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())
+// ============================================================================
+// API Key and Provider Commands
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ApiKeyStatus {
+    openai_configured: bool,
+    groq_configured: bool,
+    openai_source: Option<String>,
+    groq_source: Option<String>,
 }
+
+fn get_api_key_status_internal(settings: &Settings) -> ApiKeyStatus {
+    let openai_from_settings = settings.api_keys.openai_api_key.is_some();
+    let openai_from_env = std::env::var("OPENAI_API_KEY").is_ok();
+    let groq_from_settings = settings.api_keys.groq_api_key.is_some();
+    let groq_from_env = std::env::var("GROQ_API_KEY").is_ok();
+
+    ApiKeyStatus {
+        openai_configured: openai_from_settings || openai_from_env,
+        groq_configured: groq_from_settings || groq_from_env,
+        openai_source: if openai_from_settings {
+            Some("settings".to_string())
+        } else if openai_from_env {
+            Some("env".to_string())
+        } else {
+            None
+        },
+        groq_source: if groq_from_settings {
+            Some("settings".to_string())
+        } else if groq_from_env {
+            Some("env".to_string())
+        } else {
+            None
+        },
+    }
+}
+
+#[tauri::command]
+fn get_api_key_status(state: tauri::State<'_, Mutex<SettingsState>>) -> ApiKeyStatus {
+    let settings = &state.lock().unwrap().settings;
+    get_api_key_status_internal(settings)
+}
+
+#[tauri::command]
+fn set_api_key(
+    provider: String,
+    api_key: String,
+    state: tauri::State<'_, Mutex<SettingsState>>,
+) -> Result<ApiKeyStatus, String> {
+    let mut state_guard = state.lock().unwrap();
+
+    let key_value = if api_key.trim().is_empty() {
+        None
+    } else {
+        Some(api_key.trim().to_string())
+    };
+
+    match provider.to_lowercase().as_str() {
+        "openai" => {
+            state_guard.settings.api_keys.openai_api_key = key_value;
+        }
+        "groq" => {
+            state_guard.settings.api_keys.groq_api_key = key_value;
+        }
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    }
+
+    settings::save_settings(&state_guard.settings)?;
+
+    Ok(get_api_key_status_internal(&state_guard.settings))
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ProviderInfo {
+    id: String,
+    name: String,
+    model: String,
+    available: bool,
+}
+
+#[tauri::command]
+fn get_available_providers(state: tauri::State<'_, Mutex<SettingsState>>) -> Vec<ProviderInfo> {
+    let settings = &state.lock().unwrap().settings;
+
+    vec![
+        ProviderInfo {
+            id: "openai".to_string(),
+            name: "OpenAI Whisper".to_string(),
+            model: "whisper-1".to_string(),
+            available: settings::get_api_key_for_provider(&TranscriptionProvider::OpenAI, settings)
+                .is_some(),
+        },
+        ProviderInfo {
+            id: "groq".to_string(),
+            name: "Groq Whisper".to_string(),
+            model: "whisper-large-v3-turbo".to_string(),
+            available: settings::get_api_key_for_provider(&TranscriptionProvider::Groq, settings)
+                .is_some(),
+        },
+    ]
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct TranscriptionSettings {
+    provider: String,
+    model: String,
+}
+
+#[tauri::command]
+fn get_transcription_settings(
+    state: tauri::State<'_, Mutex<SettingsState>>,
+) -> TranscriptionSettings {
+    let settings = &state.lock().unwrap().settings;
+    TranscriptionSettings {
+        provider: match settings.transcription.provider {
+            TranscriptionProvider::OpenAI => "openai".to_string(),
+            TranscriptionProvider::Groq => "groq".to_string(),
+        },
+        model: settings::get_model_for_provider(&settings.transcription.provider).to_string(),
+    }
+}
+
+#[tauri::command]
+fn set_transcription_provider(
+    provider: String,
+    state: tauri::State<'_, Mutex<SettingsState>>,
+) -> Result<TranscriptionSettings, String> {
+    let mut state_guard = state.lock().unwrap();
+
+    let new_provider = match provider.to_lowercase().as_str() {
+        "openai" => TranscriptionProvider::OpenAI,
+        "groq" => TranscriptionProvider::Groq,
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+
+    // Validate that the provider has an API key configured
+    if settings::get_api_key_for_provider(&new_provider, &state_guard.settings).is_none() {
+        return Err(format!("No API key configured for {}", provider));
+    }
+
+    state_guard.settings.transcription.provider = new_provider.clone();
+    settings::save_settings(&state_guard.settings)?;
+
+    Ok(TranscriptionSettings {
+        provider,
+        model: settings::get_model_for_provider(&new_provider).to_string(),
+    })
+}
+
+// ============================================================================
+// Window and Recording Helpers
+// ============================================================================
 
 fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let window_width = 320;
     let adjusted_x = (x - (window_width / 2)).max(10);
     let _ = window.show();
-    let _ = window.set_position(tauri::Position::Physical(
-        tauri::PhysicalPosition::new(adjusted_x, y),
-    ));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+        adjusted_x, y,
+    )));
     let _ = window.set_focus();
 }
 
-
 async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
-    let api_key = match get_api_key() {
-        Ok(key) => key,
-        Err(e) => {
-            eprintln!("API key error: {}", e);
-            let _ = app.emit("error", e);
+    // Get settings and API key for the selected provider
+    let (api_key, endpoint, model) = {
+        let settings_state = app.state::<Mutex<SettingsState>>();
+        let settings = &settings_state.lock().unwrap().settings;
+
+        let provider = &settings.transcription.provider;
+        let api_key = settings::get_api_key_for_provider(provider, settings);
+        let endpoint = settings::get_endpoint_for_provider(provider);
+        let model = settings::get_model_for_provider(provider);
+
+        (api_key, endpoint, model)
+    };
+
+    let api_key = match api_key {
+        Some(key) => key,
+        None => {
+            let err = "No API key configured. Please add an API key in Settings.";
+            eprintln!("API key error: {}", err);
+            let _ = app.emit("error", err);
             return;
         }
     };
 
     let _ = app.emit("transcription-status", "Transcribing...");
 
-    match transcription::transcribe_audio(&audio_path, &api_key).await {
+    let request = transcription::TranscriptionRequest {
+        audio_path: &audio_path,
+        api_key: &api_key,
+        endpoint,
+        model,
+    };
+
+    match transcription::transcribe_audio(request).await {
         Ok(text) => {
-            app.state::<Mutex<AppState>>().lock().unwrap().last_transcription = text.clone();
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
             if let Err(e) = paste::set_clipboard_and_paste(&text) {
@@ -185,9 +360,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(Mutex::new(AppState::default()))
         .manage(Mutex::new(RecorderState { handle: None }))
-        .manage(Mutex::new(ShortcutState {
+        .manage(Mutex::new(ShortcutStateInner {
             current_shortcut: None,
             config: shortcut_config.clone(),
+        }))
+        .manage(Mutex::new(SettingsState {
+            settings: loaded_settings,
         }))
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -216,8 +394,13 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    use tauri::tray::{TrayIconEvent, MouseButtonState};
-                    if let TrayIconEvent::Click { rect, button_state: MouseButtonState::Down, .. } = event {
+                    use tauri::tray::{MouseButtonState, TrayIconEvent};
+                    if let TrayIconEvent::Click {
+                        rect,
+                        button_state: MouseButtonState::Down,
+                        ..
+                    } = event
+                    {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
@@ -240,8 +423,7 @@ pub fn run() {
 
             // Build shortcut from loaded config
             let parsed_modifiers = settings::parse_modifiers(&shortcut_config.modifiers);
-            let parsed_key = settings::parse_key(&shortcut_config.key)
-                .unwrap_or(Code::Space);
+            let parsed_key = settings::parse_key(&shortcut_config.key).unwrap_or(Code::Space);
             let shortcut = Shortcut::new(Some(parsed_modifiers), parsed_key);
 
             app.handle().plugin(
@@ -252,19 +434,18 @@ pub fn run() {
                         let app_state = app.state::<Mutex<AppState>>();
 
                         match event.state() {
-                            ShortcutState::Pressed => {
-                                match audio::start_recording() {
-                                    Ok(handle) => {
-                                        recorder_state.lock().unwrap().handle = Some(handle);
-                                        app_state.lock().unwrap().is_recording = true;
-                                        let _ = app.emit("recording-status", true);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to start recording: {}", e);
-                                        let _ = app.emit("error", format!("Failed to start recording: {}", e));
-                                    }
+                            ShortcutState::Pressed => match audio::start_recording() {
+                                Ok(handle) => {
+                                    recorder_state.lock().unwrap().handle = Some(handle);
+                                    app_state.lock().unwrap().is_recording = true;
+                                    let _ = app.emit("recording-status", true);
                                 }
-                            }
+                                Err(e) => {
+                                    eprintln!("Failed to start recording: {}", e);
+                                    let _ = app
+                                        .emit("error", format!("Failed to start recording: {}", e));
+                                }
+                            },
                             ShortcutState::Released => {
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
@@ -272,17 +453,18 @@ pub fn run() {
 
                                 if let Some(handle) = handle {
                                     let app_clone = app.clone();
-                                    std::thread::spawn(move || {
-                                        match handle.stop() {
-                                            Ok(path) => {
-                                                tauri::async_runtime::block_on(
-                                                    handle_recording_stop(app_clone, path)
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Failed to stop recording: {}", e);
-                                                let _ = app_clone.emit("error", format!("Failed to stop recording: {}", e));
-                                            }
+                                    std::thread::spawn(move || match handle.stop() {
+                                        Ok(path) => {
+                                            tauri::async_runtime::block_on(handle_recording_stop(
+                                                app_clone, path,
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Failed to stop recording: {}", e);
+                                            let _ = app_clone.emit(
+                                                "error",
+                                                format!("Failed to stop recording: {}", e),
+                                            );
                                         }
                                     });
                                 }
@@ -295,7 +477,7 @@ pub fn run() {
             // Register the shortcut and store it in state
             app.global_shortcut().register(shortcut.clone())?;
             {
-                let shortcut_state = app.state::<Mutex<ShortcutState>>();
+                let shortcut_state = app.state::<Mutex<ShortcutStateInner>>();
                 shortcut_state.lock().unwrap().current_shortcut = Some(shortcut);
             }
 
@@ -308,6 +490,11 @@ pub fn run() {
             paste_text,
             get_shortcut,
             set_shortcut,
+            get_api_key_status,
+            set_api_key,
+            get_available_providers,
+            get_transcription_settings,
+            set_transcription_provider,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
