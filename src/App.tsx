@@ -1,50 +1,102 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [transcription, setTranscription] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [status, setStatus] = useState("Ready");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [error, setError] = useState("");
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    invoke<string>("get_transcription").then(setTranscription);
+    invoke<boolean>("get_recording_status").then(setIsRecording);
+
+    const unlisteners = [
+      listen<boolean>("recording-status", (e) => {
+        setIsRecording(e.payload);
+        setStatus(e.payload ? "Recording..." : "Processing...");
+        if (e.payload) setError("");
+      }),
+      listen<string>("transcription", (e) => {
+        setTranscription(e.payload);
+        setStatus("Ready");
+      }),
+      listen<string>("transcription-status", (e) => setStatus(e.payload)),
+      listen<string>("error", (e) => {
+        setError(e.payload);
+        setStatus("Error");
+      }),
+    ];
+
+    return () => { unlisteners.forEach((p) => p.then((fn) => fn())); };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await invoke("copy_to_clipboard", { text: transcription });
+      setError("");
+      setStatus("Copied!");
+      setTimeout(() => setStatus("Ready"), 1500);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    setTranscription(editText);
+    setIsEditing(false);
+    try {
+      await invoke("paste_text", { text: editText });
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="container">
+      <div className="header">
+        <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
+        <span className="status-text">{status}</span>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      {error && <div className="error">{error}</div>}
+
+      <div className="content">
+        {isEditing ? (
+          <textarea
+            className="edit-area"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            autoFocus
+          />
+        ) : (
+          <div className="transcription">
+            {transcription || "Press Cmd+Shift+Space to record"}
+          </div>
+        )}
+      </div>
+
+      <div className="actions">
+        {isEditing ? (
+          <>
+            <button onClick={handleSaveEdit} className="btn primary">Paste</button>
+            <button onClick={() => setIsEditing(false)} className="btn">Cancel</button>
+          </>
+        ) : (
+          <>
+            <button onClick={handleCopy} className="btn" disabled={!transcription}>Copy</button>
+            <button onClick={() => { setEditText(transcription); setIsEditing(true); }} className="btn" disabled={!transcription}>Edit</button>
+          </>
+        )}
+      </div>
+
+      <div className="hint">Cmd+Shift+Space to record</div>
+    </div>
   );
 }
 
