@@ -5,7 +5,7 @@ mod transcription;
 
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
-use settings::{Settings, ShortcutConfig};
+use settings::ShortcutConfig;
 use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, Manager,
@@ -13,7 +13,7 @@ use tauri::{
     tray::TrayIconBuilder,
     ActivationPolicy,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct AppState {
@@ -25,7 +25,7 @@ struct RecorderState {
     handle: Option<RecordingHandle>,
 }
 
-struct ShortcutState {
+struct ShortcutSettings {
     current_shortcut: Option<Shortcut>,
     config: ShortcutConfig,
 }
@@ -58,7 +58,7 @@ struct ShortcutInfo {
 }
 
 #[tauri::command]
-fn get_shortcut(state: tauri::State<'_, Mutex<ShortcutState>>) -> ShortcutInfo {
+fn get_shortcut(state: tauri::State<'_, Mutex<ShortcutSettings>>) -> ShortcutInfo {
     let config = state.lock().unwrap().config.clone();
     ShortcutInfo {
         modifiers: config.modifiers.clone(),
@@ -95,7 +95,7 @@ fn set_shortcut(
 
     // Unregister the old shortcut
     {
-        let shortcut_state = app.state::<Mutex<ShortcutState>>();
+        let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
         let state = shortcut_state.lock().unwrap();
         if let Some(old_shortcut) = &state.current_shortcut {
             let _ = app.global_shortcut().unregister(old_shortcut.clone());
@@ -109,7 +109,7 @@ fn set_shortcut(
 
     // Update the state
     {
-        let shortcut_state = app.state::<Mutex<ShortcutState>>();
+        let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
         let mut state = shortcut_state.lock().unwrap();
         state.current_shortcut = Some(new_shortcut);
         state.config = new_config.clone();
@@ -185,7 +185,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(Mutex::new(AppState::default()))
         .manage(Mutex::new(RecorderState { handle: None }))
-        .manage(Mutex::new(ShortcutState {
+        .manage(Mutex::new(ShortcutSettings {
             current_shortcut: None,
             config: shortcut_config.clone(),
         }))
@@ -295,7 +295,7 @@ pub fn run() {
             // Register the shortcut and store it in state
             app.global_shortcut().register(shortcut.clone())?;
             {
-                let shortcut_state = app.state::<Mutex<ShortcutState>>();
+                let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
                 shortcut_state.lock().unwrap().current_shortcut = Some(shortcut);
             }
 
