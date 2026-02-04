@@ -48,17 +48,14 @@ fn get_api_key() -> Result<String, String> {
         .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())
 }
 
-fn show_window_at_tray(app: &AppHandle, x: f64, y: f64) {
-    if let Some(window) = app.get_webview_window("main") {
-        // Position window centered below the tray icon click
-        let window_width = 320.0;
-        let adjusted_x = x - (window_width / 2.0);
-        let _ = window.set_position(tauri::Position::Logical(
-            tauri::LogicalPosition::new(adjusted_x, y),
-        ));
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
+    let window_width = 320;
+    let adjusted_x = (x - (window_width / 2)).max(10);
+    let _ = window.show();
+    let _ = window.set_position(tauri::Position::Physical(
+        tauri::PhysicalPosition::new(adjusted_x, y),
+    ));
+    let _ = window.set_focus();
 }
 
 
@@ -104,12 +101,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
 
-            // Hide window when it loses focus
+            // Hide window when it loses focus (click outside)
             if let Some(window) = app.get_webview_window("main") {
-                let window_clone = window.clone();
+                let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        let _ = window_clone.hide();
+                        let _ = w.hide();
                     }
                 });
             }
@@ -120,28 +117,29 @@ pub fn run() {
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
                     if event.id() == "quit" {
                         app.exit(0);
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { rect, .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
+                    use tauri::tray::{TrayIconEvent, MouseButtonState};
+                    if let TrayIconEvent::Click { rect, button_state: MouseButtonState::Down, .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
-                                // Position below the tray icon
-                                let (x, y) = match rect.position {
-                                    tauri::Position::Logical(p) => (p.x, p.y),
-                                    tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                                let (x, y, h) = match (&rect.position, &rect.size) {
+                                    (tauri::Position::Physical(p), tauri::Size::Physical(s)) => {
+                                        (p.x, p.y, s.height as i32)
+                                    }
+                                    (tauri::Position::Logical(p), tauri::Size::Logical(s)) => {
+                                        (p.x as i32, p.y as i32, s.height as i32)
+                                    }
+                                    _ => (100, 0, 30),
                                 };
-                                let h = match rect.size {
-                                    tauri::Size::Logical(s) => s.height,
-                                    tauri::Size::Physical(s) => s.height as f64,
-                                };
-                                show_window_at_tray(app, x, y + h);
+                                show_window_at_position(&window, x, y + h);
                             }
                         }
                     }
