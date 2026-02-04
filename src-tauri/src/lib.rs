@@ -1,12 +1,15 @@
 mod audio;
+mod cursor;
 mod paste;
 mod transcription;
 
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::{
-    AppHandle, Emitter, Manager,
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
     ActivationPolicy,
@@ -21,6 +24,7 @@ pub struct AppState {
 
 struct RecorderState {
     handle: Option<RecordingHandle>,
+    stop_polling: Arc<AtomicBool>,
 }
 
 #[tauri::command]
@@ -58,13 +62,59 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let _ = window.set_focus();
 }
 
+fn create_indicator_window(app: &AppHandle, x: i32, y: i32) -> Option<tauri::WebviewWindow> {
+    // Close existing indicator window if any
+    if let Some(existing) = app.get_webview_window("indicator") {
+        let _ = existing.close();
+    }
+
+    // Indicator dimensions
+    let width = 60.0;
+    let height = 36.0;
+
+    // Position slightly above and to the right of cursor
+    let pos_x = x + 10;
+    let pos_y = y - 45;
+
+    let url = WebviewUrl::App("index.html?window=indicator".into());
+
+    match WebviewWindowBuilder::new(app, "indicator", url)
+        .title("Recording")
+        .inner_size(width, height)
+        .position(pos_x as f64, pos_y as f64)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .visible(true)
+        .build()
+    {
+        Ok(window) => Some(window),
+        Err(e) => {
+            eprintln!("Failed to create indicator window: {}", e);
+            None
+        }
+    }
+}
+
+fn hide_indicator_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("indicator") {
+        let _ = window.close();
+    }
+}
 
 async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
+    // Update indicator to processing state
+    let _ = app.emit("indicator-state", "processing");
+
     let api_key = match get_api_key() {
         Ok(key) => key,
         Err(e) => {
             eprintln!("API key error: {}", e);
             let _ = app.emit("error", e);
+            hide_indicator_window(&app);
             return;
         }
     };
@@ -76,10 +126,16 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
             app.state::<Mutex<AppState>>().lock().unwrap().last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
+            // Show success briefly
+            let _ = app.emit("indicator-state", "success");
+
             if let Err(e) = paste::set_clipboard_and_paste(&text) {
                 eprintln!("Failed to paste: {}", e);
                 let _ = app.emit("error", format!("Failed to paste: {}", e));
             }
+
+            // Wait a moment to show success state, then hide
+            std::thread::sleep(std::time::Duration::from_millis(400));
         }
         Err(e) => {
             eprintln!("Transcription failed: {}", e);
@@ -87,6 +143,7 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
         }
     }
 
+    hide_indicator_window(&app);
     let _ = std::fs::remove_file(audio_path);
 }
 
@@ -96,7 +153,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Mutex::new(AppState::default()))
-        .manage(Mutex::new(RecorderState { handle: None }))
+        .manage(Mutex::new(RecorderState {
+            handle: None,
+            stop_polling: Arc::new(AtomicBool::new(false)),
+        }))
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
@@ -162,7 +222,39 @@ pub fn run() {
                             ShortcutState::Pressed => {
                                 match audio::start_recording() {
                                     Ok(handle) => {
-                                        recorder_state.lock().unwrap().handle = Some(handle);
+                                        // Get cursor position for indicator placement
+                                        let (cursor_x, cursor_y) = match cursor::get_cursor_position() {
+                                            Ok(pos) => (pos.x, pos.y),
+                                            Err(_) => (100, 100), // Fallback position
+                                        };
+
+                                        // Create indicator window at cursor position
+                                        let _ = create_indicator_window(app, cursor_x, cursor_y);
+
+                                        // Reset stop flag and start audio level polling
+                                        let stop_flag = Arc::new(AtomicBool::new(false));
+                                        {
+                                            let mut state = recorder_state.lock().unwrap();
+                                            state.stop_polling = Arc::clone(&stop_flag);
+                                            state.handle = Some(handle);
+                                        }
+
+                                        // Start polling thread for audio levels
+                                        let app_clone = app.clone();
+                                        let recorder_state_clone = app.state::<Mutex<RecorderState>>().inner().clone();
+                                        std::thread::spawn(move || {
+                                            while !stop_flag.load(Ordering::Relaxed) {
+                                                // Get audio levels from recording handle
+                                                if let Ok(state) = recorder_state_clone.lock() {
+                                                    if let Some(ref handle) = state.handle {
+                                                        let levels = handle.get_audio_levels();
+                                                        let _ = app_clone.emit("audio-levels", levels);
+                                                    }
+                                                }
+                                                std::thread::sleep(std::time::Duration::from_millis(50));
+                                            }
+                                        });
+
                                         app_state.lock().unwrap().is_recording = true;
                                         let _ = app.emit("recording-status", true);
                                     }
@@ -173,6 +265,12 @@ pub fn run() {
                                 }
                             }
                             ShortcutState::Released => {
+                                // Stop audio level polling
+                                {
+                                    let state = recorder_state.lock().unwrap();
+                                    state.stop_polling.store(true, Ordering::Relaxed);
+                                }
+
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
                                 let _ = app.emit("recording-status", false);
@@ -189,6 +287,7 @@ pub fn run() {
                                             Err(e) => {
                                                 eprintln!("Failed to stop recording: {}", e);
                                                 let _ = app_clone.emit("error", format!("Failed to stop recording: {}", e));
+                                                hide_indicator_window(&app_clone);
                                             }
                                         }
                                     });
