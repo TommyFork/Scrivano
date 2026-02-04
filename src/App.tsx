@@ -62,17 +62,6 @@ function App() {
     }
   };
 
-  const handlePaste = async () => {
-    try {
-      await invoke("paste_text", { text });
-      setError("");
-      setStatus("Inscribed!");
-      setTimeout(() => setStatus("Awaiting thy voice"), 1500);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
   return (
     <div className="container">
       <div className="header">
@@ -94,7 +83,6 @@ function App() {
 
       <div className="actions">
         <button onClick={handleCopy} className="btn" disabled={!text}>Duplicate</button>
-        <button onClick={handlePaste} className="btn primary" disabled={!text}>Inscribe</button>
       </div>
 
       <div className="hint">Summon the scribe: Cmd+Shift+Space</div>
