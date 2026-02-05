@@ -77,6 +77,25 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      const isEscape =
+        event.key === "Escape" ||
+        event.key === "Esc" ||
+        event.code === "Escape" ||
+        event.keyCode === 27;
+
+      if (isEscape) {
+        event.preventDefault();
+        event.stopPropagation();
+        invoke("hide_window");
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
+
   const handleCopy = async () => {
     try {
       await invoke("copy_to_clipboard", { text });
@@ -283,7 +302,7 @@ function App() {
   }
 
   return (
-    <div className="container">
+    <div className="container" tabIndex={0} ref={(el) => el?.focus()}>
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>

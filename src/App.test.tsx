@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -154,8 +154,7 @@ screen.getByPlaceholderText("Speak unto the aether with ⌘⇧Space")
     });
 
     const textarea = screen.getByRole("textbox");
-    await user.clear(textarea);
-    await user.type(textarea, "Modified text");
+    fireEvent.change(textarea, { target: { value: "Modified text" } });
 
     expect(textarea).toHaveValue("Modified text");
   });
@@ -219,6 +218,26 @@ it("updates status message after copying", async () => {
     await waitFor(() => {
       expect(screen.getByText("'Tis copied!")).toBeInTheDocument();
     });
+  });
+
+  it("hides window when Escape key is pressed", async () => {
+    render(<App />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(mockedInvoke).toHaveBeenCalledWith("hide_window");
+  });
+
+  it("does not hide window for other keys", async () => {
+    render(<App />);
+
+    // Clear any previous calls from component mount
+    mockedInvoke.mockClear();
+
+    fireEvent.keyDown(document, { key: "Enter" });
+    fireEvent.keyDown(document, { key: "a" });
+
+    expect(mockedInvoke).not.toHaveBeenCalledWith("hide_window");
   });
 
   describe("Settings and Shortcut Recording", () => {

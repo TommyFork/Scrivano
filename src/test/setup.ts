@@ -28,5 +28,6 @@ vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => ({
     onFocusChanged: vi.fn(() => Promise.resolve(() => {})),
+    hide: vi.fn(),
   })),
 }));

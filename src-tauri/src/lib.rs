@@ -76,6 +76,11 @@ fn paste_text(text: String) -> Result<(), String> {
     paste::set_clipboard_and_paste(&text)
 }
 
+#[tauri::command]
+fn hide_window(window: tauri::Window) {
+    let _ = window.hide();
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct ShortcutInfo {
     modifiers: Vec<String>,
@@ -377,6 +382,7 @@ pub fn run() {
             get_recording_status,
             copy_to_clipboard,
             paste_text,
+            hide_window,
             get_shortcut,
             set_shortcut,
         ])
