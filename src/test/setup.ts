@@ -23,3 +23,10 @@ vi.mock("@tauri-apps/plugin-global-shortcut", () => ({
   unregister: vi.fn(),
   isRegistered: vi.fn(),
 }));
+
+// Mock Tauri's window API
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => ({
+    hide: vi.fn(),
+  })),
+}));

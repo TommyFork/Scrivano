@@ -14,9 +14,6 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager,
 };
-
-#[cfg(target_os = "macos")]
-use tauri::ActivationPolicy;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -77,6 +74,11 @@ fn copy_to_clipboard(text: String) -> Result<(), String> {
 #[tauri::command]
 fn paste_text(text: String) -> Result<(), String> {
     paste::set_clipboard_and_paste(&text)
+}
+
+#[tauri::command]
+fn hide_window(window: tauri::Window) {
+    let _ = window.hide();
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -380,6 +382,7 @@ pub fn run() {
             get_recording_status,
             copy_to_clipboard,
             paste_text,
+            hide_window,
             get_shortcut,
             set_shortcut,
         ])
