@@ -260,7 +260,7 @@ pub fn run() {
             };
 
             let tray = TrayIconBuilder::new()
-                .icon(tray_icons.select(&app.handle(), false))
+                .icon(tray_icons.select(app.handle(), false))
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
