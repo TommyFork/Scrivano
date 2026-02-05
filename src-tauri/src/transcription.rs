@@ -14,11 +14,17 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
         .build()
         .map_err(|e| format!("Failed to create client: {}", e))?;
 
-    let file_bytes = std::fs::read(audio_path)
-        .map_err(|e| format!("Failed to read audio file: {}", e))?;
+    let file_bytes =
+        std::fs::read(audio_path).map_err(|e| format!("Failed to read audio file: {}", e))?;
 
     let file_part = Part::bytes(file_bytes)
-        .file_name(audio_path.file_name().and_then(|n| n.to_str()).unwrap_or("audio.wav").to_string())
+        .file_name(
+            audio_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("audio.wav")
+                .to_string(),
+        )
         .mime_str("audio/wav")
         .map_err(|e| format!("Failed to set MIME type: {}", e))?;
 
@@ -39,7 +45,9 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
         let body = response.text().await.unwrap_or_default();
 
         if status == 429 || body.contains("insufficient_quota") {
-            return Err("OpenAI quota exceeded - check your billing at platform.openai.com".to_string());
+            return Err(
+                "OpenAI quota exceeded - check your billing at platform.openai.com".to_string(),
+            );
         }
         if status == 401 {
             return Err("Invalid OpenAI API key".to_string());

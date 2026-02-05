@@ -8,11 +8,13 @@ use serde::{Deserialize, Serialize};
 use settings::ShortcutConfig;
 use std::sync::Mutex;
 use tauri::{
-    AppHandle, Emitter, Manager,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    ActivationPolicy,
+    AppHandle, Emitter, Manager,
 };
+
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -91,7 +93,11 @@ fn set_shortcut(
     // Build the new shortcut
     let parsed_modifiers = settings::parse_modifiers(&modifiers);
     let parsed_key = settings::parse_key(&key).unwrap();
-    let mods = if parsed_modifiers.is_empty() { None } else { Some(parsed_modifiers) };
+    let mods = if parsed_modifiers.is_empty() {
+        None
+    } else {
+        Some(parsed_modifiers)
+    };
     let new_shortcut = Shortcut::new(mods, parsed_key);
 
     // Unregister the old shortcut
@@ -99,13 +105,13 @@ fn set_shortcut(
         let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
         let state = shortcut_state.lock().unwrap();
         if let Some(old_shortcut) = &state.current_shortcut {
-            let _ = app.global_shortcut().unregister(old_shortcut.clone());
+            let _ = app.global_shortcut().unregister(*old_shortcut);
         }
     }
 
     // Register the new shortcut
     app.global_shortcut()
-        .register(new_shortcut.clone())
+        .register(new_shortcut)
         .map_err(|e| format!("Failed to register shortcut: {}", e))?;
 
     // Update the state
@@ -137,12 +143,11 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let window_width = 320;
     let adjusted_x = (x - (window_width / 2)).max(10);
     let _ = window.show();
-    let _ = window.set_position(tauri::Position::Physical(
-        tauri::PhysicalPosition::new(adjusted_x, y),
-    ));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+        adjusted_x, y,
+    )));
     let _ = window.set_focus();
 }
-
 
 async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
     let api_key = match get_api_key() {
@@ -158,7 +163,10 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
 
     match transcription::transcribe_audio(&audio_path, &api_key).await {
         Ok(text) => {
-            app.state::<Mutex<AppState>>().lock().unwrap().last_transcription = text.clone();
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
             if let Err(e) = paste::set_clipboard_and_paste(&text) {
@@ -217,8 +225,13 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    use tauri::tray::{TrayIconEvent, MouseButtonState};
-                    if let TrayIconEvent::Click { rect, button_state: MouseButtonState::Down, .. } = event {
+                    use tauri::tray::{MouseButtonState, TrayIconEvent};
+                    if let TrayIconEvent::Click {
+                        rect,
+                        button_state: MouseButtonState::Down,
+                        ..
+                    } = event
+                    {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
@@ -241,9 +254,12 @@ pub fn run() {
 
             // Build shortcut from loaded config
             let parsed_modifiers = settings::parse_modifiers(&shortcut_config.modifiers);
-            let parsed_key = settings::parse_key(&shortcut_config.key)
-                .unwrap_or(Code::Space);
-            let mods = if parsed_modifiers.is_empty() { None } else { Some(parsed_modifiers) };
+            let parsed_key = settings::parse_key(&shortcut_config.key).unwrap_or(Code::Space);
+            let mods = if parsed_modifiers.is_empty() {
+                None
+            } else {
+                Some(parsed_modifiers)
+            };
             let shortcut = Shortcut::new(mods, parsed_key);
 
             app.handle().plugin(
@@ -254,19 +270,18 @@ pub fn run() {
                         let app_state = app.state::<Mutex<AppState>>();
 
                         match event.state() {
-                            ShortcutState::Pressed => {
-                                match audio::start_recording() {
-                                    Ok(handle) => {
-                                        recorder_state.lock().unwrap().handle = Some(handle);
-                                        app_state.lock().unwrap().is_recording = true;
-                                        let _ = app.emit("recording-status", true);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to start recording: {}", e);
-                                        let _ = app.emit("error", format!("Failed to start recording: {}", e));
-                                    }
+                            ShortcutState::Pressed => match audio::start_recording() {
+                                Ok(handle) => {
+                                    recorder_state.lock().unwrap().handle = Some(handle);
+                                    app_state.lock().unwrap().is_recording = true;
+                                    let _ = app.emit("recording-status", true);
                                 }
-                            }
+                                Err(e) => {
+                                    eprintln!("Failed to start recording: {}", e);
+                                    let _ = app
+                                        .emit("error", format!("Failed to start recording: {}", e));
+                                }
+                            },
                             ShortcutState::Released => {
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
@@ -274,17 +289,18 @@ pub fn run() {
 
                                 if let Some(handle) = handle {
                                     let app_clone = app.clone();
-                                    std::thread::spawn(move || {
-                                        match handle.stop() {
-                                            Ok(path) => {
-                                                tauri::async_runtime::block_on(
-                                                    handle_recording_stop(app_clone, path)
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Failed to stop recording: {}", e);
-                                                let _ = app_clone.emit("error", format!("Failed to stop recording: {}", e));
-                                            }
+                                    std::thread::spawn(move || match handle.stop() {
+                                        Ok(path) => {
+                                            tauri::async_runtime::block_on(handle_recording_stop(
+                                                app_clone, path,
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Failed to stop recording: {}", e);
+                                            let _ = app_clone.emit(
+                                                "error",
+                                                format!("Failed to stop recording: {}", e),
+                                            );
                                         }
                                     });
                                 }
@@ -295,7 +311,7 @@ pub fn run() {
             )?;
 
             // Register the shortcut and store it in state
-            app.global_shortcut().register(shortcut.clone())?;
+            app.global_shortcut().register(shortcut)?;
             {
                 let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
                 shortcut_state.lock().unwrap().current_shortcut = Some(shortcut);

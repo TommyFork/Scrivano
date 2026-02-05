@@ -434,11 +434,15 @@ describe("ShortcutRecorder", () => {
       expect(recorder.state.type).toBe("recording");
     });
 
-    it("shows error when non-modifier released without recording", () => {
+    it("records shortcut when non-modifier released without prior keydown", () => {
       // Somehow a non-modifier keyup fires without a proper keydown
-      // This shouldn't happen normally but tests edge case
+      // The fallback behavior records it with empty modifiers
       recorder.handleKeyUp(createKeyEvent("KeyA"));
-      expect(recorder.state.type).toBe("error");
+      expect(recorder.state.type).toBe("complete");
+      expect(recorder.getRecordedShortcut()).toEqual({
+        modifiers: [],
+        key: "a",
+      });
     });
 
     it("does not complete while modifiers still held", () => {

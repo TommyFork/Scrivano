@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
@@ -104,7 +104,7 @@ function App() {
   }, []);
 
   // Key down handler
-  const handleShortcutKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleShortcutKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -130,7 +130,7 @@ function App() {
   }, [isRecordingShortcutActive, syncRecorderState]);
 
   // Key up handler
-  const handleShortcutKeyUp = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleShortcutKeyUp = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
