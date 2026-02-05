@@ -14,7 +14,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct AppState {
