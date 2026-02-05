@@ -1,8 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
-use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub enum RecordingCommand {
@@ -24,12 +24,15 @@ impl RecordingHandle {
         self.command_sender
             .send(RecordingCommand::Stop(result_sender))
             .map_err(|_| "Failed to send stop command".to_string())?;
-        result_receiver.recv().map_err(|_| "Failed to receive result".to_string())?
+        result_receiver
+            .recv()
+            .map_err(|_| "Failed to receive result".to_string())?
     }
 }
 
 pub fn start_recording() -> Result<RecordingHandle, String> {
-    let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) = mpsc::channel();
+    let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) =
+        mpsc::channel();
     let audio_levels: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.2; 5]));
     let audio_levels_clone = Arc::clone(&audio_levels);
 
@@ -37,7 +40,10 @@ pub fn start_recording() -> Result<RecordingHandle, String> {
         run_recording(command_receiver, audio_levels_clone);
     });
 
-    Ok(RecordingHandle { command_sender, audio_levels })
+    Ok(RecordingHandle {
+        command_sender,
+        audio_levels,
+    })
 }
 
 fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc<Mutex<Vec<f32>>>) {
@@ -107,9 +113,11 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
                     let mut s = samples_clone.lock().unwrap();
                     let mut lw = level_window_clone.lock().unwrap();
                     for chunk in data.chunks(channels as usize) {
-                        let mono: f32 = chunk.iter()
+                        let mono: f32 = chunk
+                            .iter()
                             .map(|&sample| sample as f32 / i16::MAX as f32)
-                            .sum::<f32>() / chunk.len() as f32;
+                            .sum::<f32>()
+                            / chunk.len() as f32;
                         s.push(mono);
                         lw.push(mono.abs());
                     }
@@ -132,9 +140,11 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
                     let mut s = samples_clone.lock().unwrap();
                     let mut lw = level_window_clone.lock().unwrap();
                     for chunk in data.chunks(channels as usize) {
-                        let mono: f32 = chunk.iter()
+                        let mono: f32 = chunk
+                            .iter()
                             .map(|&sample| (sample as f32 - 32768.0) / 32768.0)
-                            .sum::<f32>() / chunk.len() as f32;
+                            .sum::<f32>()
+                            / chunk.len() as f32;
                         s.push(mono);
                         lw.push(mono.abs());
                     }
@@ -205,11 +215,13 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
 
             for &sample in samples_data.iter() {
                 let amplitude = (sample * i16::MAX as f32) as i16;
-                writer.write_sample(amplitude)
+                writer
+                    .write_sample(amplitude)
                     .map_err(|e| format!("Failed to write sample: {}", e))?;
             }
 
-            writer.finalize()
+            writer
+                .finalize()
                 .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
 
             Ok(file_path)
@@ -235,7 +247,11 @@ fn update_audio_levels(samples: &[f32], audio_levels: &Arc<Mutex<Vec<f32>>>) {
 
     for i in 0..5 {
         let start = i * chunk_size;
-        let end = if i == 4 { samples.len() } else { (i + 1) * chunk_size };
+        let end = if i == 4 {
+            samples.len()
+        } else {
+            (i + 1) * chunk_size
+        };
         let chunk = &samples[start..end];
 
         // Compute RMS for this chunk
