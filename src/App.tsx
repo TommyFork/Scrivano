@@ -1,7 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
+import {
+  createShortcutRecorder,
+  formatShortcutForDisplay,
+  type ShortcutRecorder,
+  type KeyboardEventLike,
+} from "./shortcutUtils";
 
 interface ShortcutInfo {
   modifiers: string[];
@@ -20,8 +26,13 @@ function App() {
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
   const [currentShortcut, setCurrentShortcut] = useState<ShortcutInfo | null>(null);
-  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   const [pendingShortcut, setPendingShortcut] = useState<{ modifiers: string[]; key: string } | null>(null);
+  const [shortcutError, setShortcutError] = useState("");
+  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
+  const [liveDisplay, setLiveDisplay] = useState("");
+
+  // Use a ref to hold the recorder so it persists across renders
+  const recorderRef = useRef<ShortcutRecorder>(createShortcutRecorder());
 
   useEffect(() => {
     invoke<string>("get_transcription").then(setTranscription);
@@ -70,90 +81,98 @@ function App() {
     }
   };
 
-  // Shortcut recording handler
-  const handleShortcutKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  // Sync recorder state to React state
+  const syncRecorderState = useCallback(() => {
+    const recorder = recorderRef.current;
+    const state = recorder.state;
+
+    if (state.type === "complete") {
+      setPendingShortcut(state.shortcut);
+      setShortcutError("");
+      setIsRecordingShortcut(false);
+      setLiveDisplay("");
+      recorder.cancel(); // Reset to idle
+    } else if (state.type === "error") {
+      setShortcutError(state.message);
+      setPendingShortcut(null);
+      setIsRecordingShortcut(false);
+      setLiveDisplay("");
+      recorder.cancel(); // Reset to idle
+    } else if (state.type === "recording") {
+      setLiveDisplay(recorder.getDisplay());
+    }
+  }, []);
+
+  // Key down handler
+  const handleShortcutKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Collect modifiers
-    const modifiers: string[] = [];
-    if (e.metaKey) modifiers.push("super");
-    if (e.shiftKey) modifiers.push("shift");
-    if (e.ctrlKey) modifiers.push("ctrl");
-    if (e.altKey) modifiers.push("alt");
+    if (!isRecordingShortcut) {
+      setPendingShortcut(null);
+      setShortcutError("");
+      setLiveDisplay("");
+      recorderRef.current.start();
+      setIsRecordingShortcut(true);
+    }
 
-    // Map key code to our key format
-    const keyMap: Record<string, string> = {
-      Space: "Space",
-      Enter: "Enter",
-      Tab: "Tab",
-      Escape: "Escape",
-      Backspace: "Backspace",
-      Delete: "Delete",
-      Insert: "Insert",
-      Home: "Home",
-      End: "End",
-      PageUp: "PageUp",
-      PageDown: "PageDown",
-      ArrowUp: "ArrowUp",
-      ArrowDown: "ArrowDown",
-      ArrowLeft: "ArrowLeft",
-      ArrowRight: "ArrowRight",
-      Minus: "Minus",
-      Equal: "Equal",
-      BracketLeft: "BracketLeft",
-      BracketRight: "BracketRight",
-      Backslash: "Backslash",
-      Semicolon: "Semicolon",
-      Quote: "Quote",
-      Backquote: "Backquote",
-      Comma: "Comma",
-      Period: "Period",
-      Slash: "Slash",
+    const keyEvent: KeyboardEventLike = {
+      code: e.code,
+      key: e.key,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+      shiftKey: e.shiftKey,
     };
 
-    let key = "";
+    recorderRef.current.handleKeyDown(keyEvent);
+    syncRecorderState();
+  }, [isRecordingShortcut, syncRecorderState]);
 
-    // Check for letter keys
-    if (e.code.startsWith("Key")) {
-      key = e.code.replace("Key", "").toLowerCase();
-    }
-    // Check for digit keys
-    else if (e.code.startsWith("Digit")) {
-      key = e.code.replace("Digit", "");
-    }
-    // Check for function keys
-    else if (e.code.startsWith("F") && /^F\d+$/.test(e.code)) {
-      key = e.code;
-    }
-    // Check mapped keys
-    else if (keyMap[e.code]) {
-      key = keyMap[e.code];
-    }
-    // Skip if it's just a modifier key
-    else if (["Meta", "Shift", "Control", "Alt"].includes(e.key)) {
-      return;
-    }
+  // Key up handler
+  const handleShortcutKeyUp = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-    // Must have at least one modifier and a key
-    if (modifiers.length > 0 && key) {
-      setPendingShortcut({ modifiers, key });
-      setIsRecordingShortcut(false);
-    }
-  };
+    if (!isRecordingShortcut) return;
 
-  const startRecordingShortcut = () => {
+    const keyEvent: KeyboardEventLike = {
+      code: e.code,
+      key: e.key,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
+      shiftKey: e.shiftKey,
+    };
+
+    recorderRef.current.handleKeyUp(keyEvent);
+    syncRecorderState();
+  }, [isRecordingShortcut, syncRecorderState]);
+
+  const startRecordingShortcut = useCallback(() => {
     setPendingShortcut(null);
+    setShortcutError("");
+    setLiveDisplay("");
+    recorderRef.current.start();
     setIsRecordingShortcut(true);
-  };
+  }, []);
 
-  const cancelRecordingShortcut = () => {
-    setIsRecordingShortcut(false);
+  const cancelRecordingShortcut = useCallback(() => {
+    recorderRef.current.cancel();
     setPendingShortcut(null);
-  };
+    setShortcutError("");
+    setLiveDisplay("");
+    setIsRecordingShortcut(false);
+  }, []);
+
+  const handleShortcutBlur = useCallback(() => {
+    if (isRecordingShortcut) {
+      cancelRecordingShortcut();
+    }
+  }, [isRecordingShortcut, cancelRecordingShortcut]);
 
   const saveShortcut = async () => {
-    if (!pendingShortcut) return;
+    if (!pendingShortcut || shortcutError) return;
 
     try {
       const result = await invoke<ShortcutInfo>("set_shortcut", {
@@ -162,22 +181,19 @@ function App() {
       });
       setCurrentShortcut(result);
       setPendingShortcut(null);
+      setShortcutError("");
       setError("");
     } catch (e) {
-      setError(String(e));
+      const message = String(e);
+      const friendlyMessage = message.toLowerCase().includes("failed to register shortcut")
+        ? "That shortcut is reserved by the system and cannot be registered. Try another."
+        : message;
+      setShortcutError(friendlyMessage);
     }
   };
 
-  const formatPendingShortcut = (shortcut: { modifiers: string[]; key: string }) => {
-    const modSymbols: Record<string, string> = {
-      super: "⌘",
-      shift: "⇧",
-      ctrl: "⌃",
-      alt: "⌥",
-    };
-    const parts = shortcut.modifiers.map(m => modSymbols[m] || m);
-    const keyDisplay = shortcut.key.length === 1 ? shortcut.key.toUpperCase() : shortcut.key;
-    return parts.join("") + keyDisplay;
+  const formatPendingShortcut = (shortcut: { modifiers: string[]; key: string }): string => {
+    return formatShortcutForDisplay(shortcut.modifiers, shortcut.key);
   };
 
   if (showSettings) {
@@ -193,22 +209,29 @@ function App() {
           <div className="settings-section">
             <label className="settings-label">Recording Shortcut</label>
             <p className="settings-description">
-              Press and hold this key combination to record thy voice
+              Press and hold this key combination to record thy voice.
             </p>
 
-            <div className={`shortcut-display ${isRecordingShortcut ? "shortcut-display-recording" : ""}`}>
-              {isRecordingShortcut ? (
+            {shortcutError && (
+              <div className="shortcut-error-box">
+                <span className="shortcut-error-icon">⚠</span>
+                <span>{shortcutError}</span>
+              </div>
+            )}
+
+            <div className={`shortcut-display ${isRecordingShortcut ? "shortcut-display-recording" : ""} ${shortcutError ? "shortcut-display-error" : ""}`}>
+              {isRecordingShortcut || pendingShortcut ? (
                 <input
                   type="text"
                   className="shortcut-input"
                   placeholder="Press thy keys..."
+                  value={isRecordingShortcut ? liveDisplay : pendingShortcut ? formatPendingShortcut(pendingShortcut) : ""}
                   onKeyDown={handleShortcutKeyDown}
-                  onBlur={() => setIsRecordingShortcut(false)}
+                  onKeyUp={handleShortcutKeyUp}
+                  onBlur={handleShortcutBlur}
                   autoFocus
                   readOnly
                 />
-              ) : pendingShortcut ? (
-                <span className="shortcut-pending">{formatPendingShortcut(pendingShortcut)}</span>
               ) : (
                 <span className="shortcut-current">{currentShortcut?.display || "⌘⇧Space"}</span>
               )}
@@ -228,6 +251,10 @@ function App() {
                     Discard
                   </button>
                 </>
+              ) : shortcutError ? (
+                <button onClick={startRecordingShortcut} className="btn">
+                  Try Again
+                </button>
               ) : (
                 <button onClick={startRecordingShortcut} className="btn">
                   Change
@@ -238,7 +265,7 @@ function App() {
         </div>
 
         <div className="actions">
-          <button onClick={() => setShowSettings(false)} className="btn primary">
+          <button onClick={() => { setShowSettings(false); setShortcutError(""); setPendingShortcut(null); }} className="btn primary">
             Return
           </button>
         </div>
