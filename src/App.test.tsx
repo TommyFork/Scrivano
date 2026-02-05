@@ -139,7 +139,6 @@ screen.getByPlaceholderText("Speak unto the aether with ⌘⇧Space")
   });
 
   it("allows user to edit text in textarea", async () => {
-    const user = userEvent.setup();
     mockedInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_transcription") return Promise.resolve("Original");
       if (cmd === "get_recording_status") return Promise.resolve(false);
