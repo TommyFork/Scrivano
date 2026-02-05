@@ -23,6 +23,31 @@ struct RecorderState {
     handle: Option<RecordingHandle>,
 }
 
+#[derive(Clone)]
+struct TrayIcons {
+    idle_1x: tauri::image::Image<'static>,
+    idle_2x: tauri::image::Image<'static>,
+    recording_1x: tauri::image::Image<'static>,
+    recording_2x: tauri::image::Image<'static>,
+}
+
+impl TrayIcons {
+    fn select(&self, app: &AppHandle, recording: bool) -> tauri::image::Image<'static> {
+        let scale_factor = app
+            .get_webview_window("main")
+            .and_then(|window| window.scale_factor().ok())
+            .unwrap_or(1.0);
+        let use_retina = scale_factor >= 2.0;
+
+        match (recording, use_retina) {
+            (false, false) => self.idle_1x.clone(),
+            (false, true) => self.idle_2x.clone(),
+            (true, false) => self.recording_1x.clone(),
+            (true, true) => self.recording_2x.clone(),
+        }
+    }
+}
+
 #[tauri::command]
 fn get_transcription(state: tauri::State<'_, Mutex<AppState>>) -> String {
     state.lock().unwrap().last_transcription.clone()
@@ -114,8 +139,19 @@ pub fn run() {
             let quit = MenuItemBuilder::with_id("quit", "Quit Scrivano").build(app)?;
             let menu = MenuBuilder::new(app).item(&quit).build()?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let tray_icons = TrayIcons {
+                idle_1x: tauri::image::Image::from_bytes(include_bytes!("../icons/tray-idle-22.png"))
+                    .expect("Failed to load tray idle 22px icon"),
+                idle_2x: tauri::image::Image::from_bytes(include_bytes!("../icons/tray-idle-44.png"))
+                    .expect("Failed to load tray idle 44px icon"),
+                recording_1x: tauri::image::Image::from_bytes(include_bytes!("../icons/tray-recording-22.png"))
+                    .expect("Failed to load tray recording 22px icon"),
+                recording_2x: tauri::image::Image::from_bytes(include_bytes!("../icons/tray-recording-44.png"))
+                    .expect("Failed to load tray recording 44px icon"),
+            };
+
+            let tray = TrayIconBuilder::new()
+                .icon(tray_icons.select(&app.handle(), false))
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
@@ -146,6 +182,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            let tray_handle = tray.clone();
+            let tray_icons_for_handler = tray_icons.clone();
+
             let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
 
             app.handle().plugin(
@@ -158,12 +197,18 @@ pub fn run() {
                         let recorder_state = app.state::<Mutex<RecorderState>>();
                         let app_state = app.state::<Mutex<AppState>>();
 
+                        let set_tray_icon = |recording: bool| {
+                            let icon = tray_icons_for_handler.select(app, recording);
+                            let _ = tray_handle.set_icon(Some(icon));
+                        };
+
                         match event.state() {
                             ShortcutState::Pressed => {
                                 match audio::start_recording() {
                                     Ok(handle) => {
                                         recorder_state.lock().unwrap().handle = Some(handle);
                                         app_state.lock().unwrap().is_recording = true;
+                                        set_tray_icon(true);
                                         let _ = app.emit("recording-status", true);
                                     }
                                     Err(e) => {
@@ -175,6 +220,7 @@ pub fn run() {
                             ShortcutState::Released => {
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
+                                set_tray_icon(false);
                                 let _ = app.emit("recording-status", false);
 
                                 if let Some(handle) = handle {
