@@ -231,7 +231,10 @@ pub fn run() {
                                         // Create indicator window at cursor position
                                         let _ = create_indicator_window(app, cursor_x, cursor_y);
 
-                                        // Reset stop flag and start audio level polling
+                                        // Get the audio levels Arc before storing the handle
+                                        let audio_levels_arc = handle.get_audio_levels_arc();
+
+                                        // Reset stop flag and store the handle
                                         let stop_flag = Arc::new(AtomicBool::new(false));
                                         {
                                             let mut state = recorder_state.lock().unwrap();
@@ -241,16 +244,11 @@ pub fn run() {
 
                                         // Start polling thread for audio levels
                                         let app_clone = app.clone();
-                                        let recorder_state_clone = app.state::<Mutex<RecorderState>>().inner().clone();
                                         std::thread::spawn(move || {
                                             while !stop_flag.load(Ordering::Relaxed) {
-                                                // Get audio levels from recording handle
-                                                if let Ok(state) = recorder_state_clone.lock() {
-                                                    if let Some(ref handle) = state.handle {
-                                                        let levels = handle.get_audio_levels();
-                                                        let _ = app_clone.emit("audio-levels", levels);
-                                                    }
-                                                }
+                                                // Get audio levels directly from the Arc
+                                                let levels = audio_levels_arc.lock().unwrap().clone();
+                                                let _ = app_clone.emit("audio-levels", levels);
                                                 std::thread::sleep(std::time::Duration::from_millis(50));
                                             }
                                         });

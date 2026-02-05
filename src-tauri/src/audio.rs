@@ -15,8 +15,8 @@ pub struct RecordingHandle {
 }
 
 impl RecordingHandle {
-    pub fn get_audio_levels(&self) -> Vec<f32> {
-        self.audio_levels.lock().unwrap().clone()
+    pub fn get_audio_levels_arc(&self) -> Arc<Mutex<Vec<f32>>> {
+        Arc::clone(&self.audio_levels)
     }
 
     pub fn stop(self) -> Result<PathBuf, String> {
