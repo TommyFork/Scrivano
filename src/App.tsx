@@ -39,12 +39,13 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         getCurrentWindow().hide();
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleCopy = async () => {
@@ -70,7 +71,7 @@ function App() {
   };
 
   return (
-    <div className="container">
+    <div className="container" tabIndex={-1} ref={(el) => el?.focus()}>
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>
