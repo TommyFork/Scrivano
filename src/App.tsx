@@ -16,12 +16,14 @@ interface ShortcutInfo {
   display: string;
 }
 
+const STATUS_DISPLAY_DURATION = 1500;
+
 function App() {
   const [text, setText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Awaiting thy voice");
   const [error, setError] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
@@ -67,7 +69,7 @@ function App() {
     });
 
     // Initial focus
-    setTimeout(() => textareaRef.current?.focus(), 50);
+    requestAnimationFrame(() => textareaRef.current?.focus());
 
     return () => {
       unlisteners.forEach((p) => p.then((fn) => fn()));
@@ -80,7 +82,7 @@ function App() {
       await invoke("copy_to_clipboard", { text });
       setError("");
       setStatus("'Tis copied!");
-      setTimeout(() => setStatus("Awaiting thy voice"), 1500);
+      setTimeout(() => setStatus("Awaiting thy voice"), STATUS_DISPLAY_DURATION);
     } catch (e) {
       setError(String(e));
     }
@@ -299,6 +301,8 @@ function App() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={`Speak unto the aether with ${currentShortcut?.display || "⌘⇧Space"}`}
+          aria-label="Transcription text"
+          spellCheck={false}
         />
       </div>
 
