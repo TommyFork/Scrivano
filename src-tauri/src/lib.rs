@@ -433,7 +433,7 @@ pub fn run() {
                                         std::thread::spawn(move || {
                                             // Give the indicator window time to load
                                             std::thread::sleep(std::time::Duration::from_millis(
-                                                100,
+                                                150,
                                             ));
 
                                             while !stop_flag.load(Ordering::Relaxed) {
@@ -444,7 +444,10 @@ pub fn run() {
                                                 if let Some(indicator) =
                                                     app_clone.get_webview_window("indicator")
                                                 {
-                                                    let _ = indicator.emit("audio-levels", levels);
+                                                    eprintln!("Emitting audio levels to indicator: {:?}", levels);
+                                                    let _ = indicator.emit("audio-levels", &levels);
+                                                } else {
+                                                    eprintln!("Indicator window not found!");
                                                 }
                                                 std::thread::sleep(
                                                     std::time::Duration::from_millis(50),

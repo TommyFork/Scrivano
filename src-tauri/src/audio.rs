@@ -267,6 +267,7 @@ fn update_audio_levels(samples: &[f32], audio_levels: &Arc<Mutex<Vec<f32>>>) {
     }
 
     if let Ok(mut al) = audio_levels.lock() {
+        eprintln!("Audio levels updated: {:?}", levels);
         *al = levels;
     }
 }
