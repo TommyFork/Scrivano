@@ -60,7 +60,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       const isEscape =
         event.key === "Escape" ||
         event.key === "Esc" ||

@@ -184,8 +184,7 @@ describe("App", () => {
     await user.click(screen.getByText("Amend"));
 
     const textarea = screen.getByRole("textbox");
-    await user.clear(textarea);
-    await user.type(textarea, "Modified text");
+    fireEvent.change(textarea, { target: { value: "Modified text" } });
 
     await user.click(screen.getByText("Inscribe"));
 
