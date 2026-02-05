@@ -3,13 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 
 // Get mocked functions
 const mockedInvoke = invoke as Mock;
 const mockedListen = listen as Mock;
-const mockedGetCurrentWindow = getCurrentWindow as Mock;
 
 describe("App", () => {
   beforeEach(() => {
@@ -236,25 +234,22 @@ describe("App", () => {
   });
 
   it("hides window when Escape key is pressed", async () => {
-    const mockHide = vi.fn();
-    mockedGetCurrentWindow.mockReturnValue({ hide: mockHide });
-
     render(<App />);
 
     fireEvent.keyDown(document, { key: "Escape" });
 
-    expect(mockHide).toHaveBeenCalled();
+    expect(mockedInvoke).toHaveBeenCalledWith("hide_window");
   });
 
   it("does not hide window for other keys", async () => {
-    const mockHide = vi.fn();
-    mockedGetCurrentWindow.mockReturnValue({ hide: mockHide });
-
     render(<App />);
+
+    // Clear any previous calls from component mount
+    mockedInvoke.mockClear();
 
     fireEvent.keyDown(document, { key: "Enter" });
     fireEvent.keyDown(document, { key: "a" });
 
-    expect(mockHide).not.toHaveBeenCalled();
+    expect(mockedInvoke).not.toHaveBeenCalledWith("hide_window");
   });
 });

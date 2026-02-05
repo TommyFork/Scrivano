@@ -44,6 +44,11 @@ fn paste_text(text: String) -> Result<(), String> {
     paste::set_clipboard_and_paste(&text)
 }
 
+#[tauri::command]
+fn hide_window(window: tauri::Window) {
+    let _ = window.hide();
+}
+
 fn get_api_key() -> Result<String, String> {
     std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())
@@ -216,6 +221,7 @@ pub fn run() {
             get_recording_status,
             copy_to_clipboard,
             paste_text,
+            hide_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

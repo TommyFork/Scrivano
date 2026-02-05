@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
 function App() {
@@ -38,14 +37,21 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      const isEscape =
+        event.key === "Escape" ||
+        event.key === "Esc" ||
+        event.code === "Escape" ||
+        event.keyCode === 27;
+
+      if (isEscape) {
         event.preventDefault();
-        getCurrentWindow().hide();
+        event.stopPropagation();
+        invoke("hide_window");
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
   const handleCopy = async () => {
@@ -71,7 +77,7 @@ function App() {
   };
 
   return (
-    <div className="container" tabIndex={-1} ref={(el) => el?.focus()}>
+    <div className="container" tabIndex={0} ref={(el) => el?.focus()}>
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>
