@@ -28,7 +28,7 @@ function App() {
   const [currentShortcut, setCurrentShortcut] = useState<ShortcutInfo | null>(null);
   const [pendingShortcut, setPendingShortcut] = useState<{ modifiers: string[]; key: string } | null>(null);
   const [shortcutError, setShortcutError] = useState("");
-  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
+  const [isRecordingShortcutActive, setIsRecordingShortcutActive] = useState(false);
   const [liveDisplay, setLiveDisplay] = useState("");
 
   // Use a ref to hold the recorder so it persists across renders
@@ -89,13 +89,13 @@ function App() {
     if (state.type === "complete") {
       setPendingShortcut(state.shortcut);
       setShortcutError("");
-      setIsRecordingShortcut(false);
+      setIsRecordingShortcutActive(false);
       setLiveDisplay("");
       recorder.cancel(); // Reset to idle
     } else if (state.type === "error") {
       setShortcutError(state.message);
       setPendingShortcut(null);
-      setIsRecordingShortcut(false);
+      setIsRecordingShortcutActive(false);
       setLiveDisplay("");
       recorder.cancel(); // Reset to idle
     } else if (state.type === "recording") {
@@ -108,12 +108,12 @@ function App() {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!isRecordingShortcut) {
+    if (!isRecordingShortcutActive) {
       setPendingShortcut(null);
       setShortcutError("");
       setLiveDisplay("");
       recorderRef.current.start();
-      setIsRecordingShortcut(true);
+      setIsRecordingShortcutActive(true);
     }
 
     const keyEvent: KeyboardEventLike = {
@@ -127,14 +127,14 @@ function App() {
 
     recorderRef.current.handleKeyDown(keyEvent);
     syncRecorderState();
-  }, [isRecordingShortcut, syncRecorderState]);
+  }, [isRecordingShortcutActive, syncRecorderState]);
 
   // Key up handler
   const handleShortcutKeyUp = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!isRecordingShortcut) return;
+    if (!isRecordingShortcutActive) return;
 
     const keyEvent: KeyboardEventLike = {
       code: e.code,
@@ -147,14 +147,14 @@ function App() {
 
     recorderRef.current.handleKeyUp(keyEvent);
     syncRecorderState();
-  }, [isRecordingShortcut, syncRecorderState]);
+  }, [isRecordingShortcutActive, syncRecorderState]);
 
   const startRecordingShortcut = useCallback(() => {
     setPendingShortcut(null);
     setShortcutError("");
     setLiveDisplay("");
     recorderRef.current.start();
-    setIsRecordingShortcut(true);
+    setIsRecordingShortcutActive(true);
   }, []);
 
   const cancelRecordingShortcut = useCallback(() => {
@@ -162,14 +162,14 @@ function App() {
     setPendingShortcut(null);
     setShortcutError("");
     setLiveDisplay("");
-    setIsRecordingShortcut(false);
+    setIsRecordingShortcutActive(false);
   }, []);
 
   const handleShortcutBlur = useCallback(() => {
-    if (isRecordingShortcut) {
+    if (isRecordingShortcutActive) {
       cancelRecordingShortcut();
     }
-  }, [isRecordingShortcut, cancelRecordingShortcut]);
+  }, [isRecordingShortcutActive, cancelRecordingShortcut]);
 
   const saveShortcut = async () => {
     if (!pendingShortcut || shortcutError) return;
@@ -219,13 +219,13 @@ function App() {
               </div>
             )}
 
-            <div className={`shortcut-display ${isRecordingShortcut ? "shortcut-display-recording" : ""} ${shortcutError ? "shortcut-display-error" : ""}`}>
-              {isRecordingShortcut || pendingShortcut ? (
+            <div className={`shortcut-display ${isRecordingShortcutActive ? "shortcut-display-recording" : ""} ${shortcutError ? "shortcut-display-error" : ""}`}>
+              {isRecordingShortcutActive || pendingShortcut ? (
                 <input
                   type="text"
                   className="shortcut-input"
                   placeholder="Press thy keys..."
-                  value={isRecordingShortcut ? liveDisplay : pendingShortcut ? formatPendingShortcut(pendingShortcut) : ""}
+                  value={isRecordingShortcutActive ? liveDisplay : pendingShortcut ? formatPendingShortcut(pendingShortcut) : ""}
                   onKeyDown={handleShortcutKeyDown}
                   onKeyUp={handleShortcutKeyUp}
                   onBlur={handleShortcutBlur}
@@ -238,7 +238,7 @@ function App() {
             </div>
 
             <div className="shortcut-actions">
-              {isRecordingShortcut ? (
+              {isRecordingShortcutActive ? (
                 <button onClick={cancelRecordingShortcut} className="btn">
                   Cease
                 </button>
