@@ -1,8 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
-use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Sender, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub enum RecordingCommand {
@@ -19,12 +19,15 @@ impl RecordingHandle {
         self.command_sender
             .send(RecordingCommand::Stop(result_sender))
             .map_err(|_| "Failed to send stop command".to_string())?;
-        result_receiver.recv().map_err(|_| "Failed to receive result".to_string())?
+        result_receiver
+            .recv()
+            .map_err(|_| "Failed to receive result".to_string())?
     }
 }
 
 pub fn start_recording() -> Result<RecordingHandle, String> {
-    let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) = mpsc::channel();
+    let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) =
+        mpsc::channel();
 
     thread::spawn(move || {
         run_recording(command_receiver);
@@ -85,9 +88,11 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>) {
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
                     let mut s = samples_clone.lock().unwrap();
                     for chunk in data.chunks(channels as usize) {
-                        let mono: f32 = chunk.iter()
+                        let mono: f32 = chunk
+                            .iter()
                             .map(|&sample| sample as f32 / i16::MAX as f32)
-                            .sum::<f32>() / chunk.len() as f32;
+                            .sum::<f32>()
+                            / chunk.len() as f32;
                         s.push(mono);
                     }
                 },
@@ -102,9 +107,11 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>) {
                 move |data: &[u16], _: &cpal::InputCallbackInfo| {
                     let mut s = samples_clone.lock().unwrap();
                     for chunk in data.chunks(channels as usize) {
-                        let mono: f32 = chunk.iter()
+                        let mono: f32 = chunk
+                            .iter()
                             .map(|&sample| (sample as f32 - 32768.0) / 32768.0)
-                            .sum::<f32>() / chunk.len() as f32;
+                            .sum::<f32>()
+                            / chunk.len() as f32;
                         s.push(mono);
                     }
                 },
@@ -170,11 +177,13 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>) {
 
             for &sample in samples_data.iter() {
                 let amplitude = (sample * i16::MAX as f32) as i16;
-                writer.write_sample(amplitude)
+                writer
+                    .write_sample(amplitude)
                     .map_err(|e| format!("Failed to write sample: {}", e))?;
             }
 
-            writer.finalize()
+            writer
+                .finalize()
                 .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
 
             Ok(file_path)

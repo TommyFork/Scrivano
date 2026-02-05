@@ -1,17 +1,21 @@
 mod audio;
 mod paste;
+mod settings;
 mod transcription;
 
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
+use settings::ShortcutConfig;
 use std::sync::Mutex;
 use tauri::{
-    AppHandle, Emitter, Manager,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    ActivationPolicy,
+    AppHandle, Emitter, Manager,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct AppState {
@@ -21,6 +25,11 @@ pub struct AppState {
 
 struct RecorderState {
     handle: Option<RecordingHandle>,
+}
+
+struct ShortcutSettings {
+    current_shortcut: Option<Shortcut>,
+    config: ShortcutConfig,
 }
 
 #[tauri::command]
@@ -43,6 +52,88 @@ fn paste_text(text: String) -> Result<(), String> {
     paste::set_clipboard_and_paste(&text)
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct ShortcutInfo {
+    modifiers: Vec<String>,
+    key: String,
+    display: String,
+}
+
+#[tauri::command]
+fn get_shortcut(state: tauri::State<'_, Mutex<ShortcutSettings>>) -> ShortcutInfo {
+    let config = state.lock().unwrap().config.clone();
+    ShortcutInfo {
+        modifiers: config.modifiers.clone(),
+        key: config.key.clone(),
+        display: settings::format_shortcut_display(&config),
+    }
+}
+
+#[tauri::command]
+fn set_shortcut(
+    app: AppHandle,
+    modifiers: Vec<String>,
+    key: String,
+) -> Result<ShortcutInfo, String> {
+    // Check for multi-key shortcuts (not supported by global shortcut API)
+    if key.contains('+') {
+        return Err("Multi-key shortcuts (e.g., R+L) are not supported. Use modifier keys (⌘⇧⌃⌥) with a single key.".to_string());
+    }
+
+    // Validate the key
+    if settings::parse_key(&key).is_none() {
+        return Err(format!("Invalid key: {}", key));
+    }
+
+    let new_config = ShortcutConfig {
+        modifiers: modifiers.clone(),
+        key: key.clone(),
+    };
+
+    // Build the new shortcut
+    let parsed_modifiers = settings::parse_modifiers(&modifiers);
+    let parsed_key = settings::parse_key(&key).unwrap();
+    let mods = if parsed_modifiers.is_empty() {
+        None
+    } else {
+        Some(parsed_modifiers)
+    };
+    let new_shortcut = Shortcut::new(mods, parsed_key);
+
+    // Unregister the old shortcut
+    {
+        let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
+        let state = shortcut_state.lock().unwrap();
+        if let Some(old_shortcut) = &state.current_shortcut {
+            let _ = app.global_shortcut().unregister(*old_shortcut);
+        }
+    }
+
+    // Register the new shortcut
+    app.global_shortcut()
+        .register(new_shortcut)
+        .map_err(|e| format!("Failed to register shortcut: {}", e))?;
+
+    // Update the state
+    {
+        let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
+        let mut state = shortcut_state.lock().unwrap();
+        state.current_shortcut = Some(new_shortcut);
+        state.config = new_config.clone();
+    }
+
+    // Save to settings file
+    let mut full_settings = settings::load_settings();
+    full_settings.shortcut = new_config.clone();
+    settings::save_settings(&full_settings)?;
+
+    Ok(ShortcutInfo {
+        modifiers,
+        key,
+        display: settings::format_shortcut_display(&new_config),
+    })
+}
+
 fn get_api_key() -> Result<String, String> {
     std::env::var("OPENAI_API_KEY")
         .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())
@@ -52,12 +143,11 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let window_width = 320;
     let adjusted_x = (x - (window_width / 2)).max(10);
     let _ = window.show();
-    let _ = window.set_position(tauri::Position::Physical(
-        tauri::PhysicalPosition::new(adjusted_x, y),
-    ));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+        adjusted_x, y,
+    )));
     let _ = window.set_focus();
 }
-
 
 async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
     let api_key = match get_api_key() {
@@ -73,7 +163,10 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
 
     match transcription::transcribe_audio(&audio_path, &api_key).await {
         Ok(text) => {
-            app.state::<Mutex<AppState>>().lock().unwrap().last_transcription = text.clone();
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
             if let Err(e) = paste::set_clipboard_and_paste(&text) {
@@ -92,12 +185,20 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load settings at startup
+    let loaded_settings = settings::load_settings();
+    let shortcut_config = loaded_settings.shortcut.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Mutex::new(AppState::default()))
         .manage(Mutex::new(RecorderState { handle: None }))
-        .setup(|app| {
+        .manage(Mutex::new(ShortcutSettings {
+            current_shortcut: None,
+            config: shortcut_config.clone(),
+        }))
+        .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
 
@@ -124,8 +225,13 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    use tauri::tray::{TrayIconEvent, MouseButtonState};
-                    if let TrayIconEvent::Click { rect, button_state: MouseButtonState::Down, .. } = event {
+                    use tauri::tray::{MouseButtonState, TrayIconEvent};
+                    if let TrayIconEvent::Click {
+                        rect,
+                        button_state: MouseButtonState::Down,
+                        ..
+                    } = event
+                    {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
@@ -146,32 +252,36 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Space);
+            // Build shortcut from loaded config
+            let parsed_modifiers = settings::parse_modifiers(&shortcut_config.modifiers);
+            let parsed_key = settings::parse_key(&shortcut_config.key).unwrap_or(Code::Space);
+            let mods = if parsed_modifiers.is_empty() {
+                None
+            } else {
+                Some(parsed_modifiers)
+            };
+            let shortcut = Shortcut::new(mods, parsed_key);
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |app, shortcut_ref, event| {
-                        if shortcut_ref != &shortcut {
-                            return;
-                        }
-
+                    .with_handler(|app, _shortcut_ref, event| {
+                        // Handle any registered shortcut (we only register one for recording)
                         let recorder_state = app.state::<Mutex<RecorderState>>();
                         let app_state = app.state::<Mutex<AppState>>();
 
                         match event.state() {
-                            ShortcutState::Pressed => {
-                                match audio::start_recording() {
-                                    Ok(handle) => {
-                                        recorder_state.lock().unwrap().handle = Some(handle);
-                                        app_state.lock().unwrap().is_recording = true;
-                                        let _ = app.emit("recording-status", true);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to start recording: {}", e);
-                                        let _ = app.emit("error", format!("Failed to start recording: {}", e));
-                                    }
+                            ShortcutState::Pressed => match audio::start_recording() {
+                                Ok(handle) => {
+                                    recorder_state.lock().unwrap().handle = Some(handle);
+                                    app_state.lock().unwrap().is_recording = true;
+                                    let _ = app.emit("recording-status", true);
                                 }
-                            }
+                                Err(e) => {
+                                    eprintln!("Failed to start recording: {}", e);
+                                    let _ = app
+                                        .emit("error", format!("Failed to start recording: {}", e));
+                                }
+                            },
                             ShortcutState::Released => {
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
@@ -179,17 +289,18 @@ pub fn run() {
 
                                 if let Some(handle) = handle {
                                     let app_clone = app.clone();
-                                    std::thread::spawn(move || {
-                                        match handle.stop() {
-                                            Ok(path) => {
-                                                tauri::async_runtime::block_on(
-                                                    handle_recording_stop(app_clone, path)
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Failed to stop recording: {}", e);
-                                                let _ = app_clone.emit("error", format!("Failed to stop recording: {}", e));
-                                            }
+                                    std::thread::spawn(move || match handle.stop() {
+                                        Ok(path) => {
+                                            tauri::async_runtime::block_on(handle_recording_stop(
+                                                app_clone, path,
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Failed to stop recording: {}", e);
+                                            let _ = app_clone.emit(
+                                                "error",
+                                                format!("Failed to stop recording: {}", e),
+                                            );
                                         }
                                     });
                                 }
@@ -199,7 +310,12 @@ pub fn run() {
                     .build(),
             )?;
 
+            // Register the shortcut and store it in state
             app.global_shortcut().register(shortcut)?;
+            {
+                let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
+                shortcut_state.lock().unwrap().current_shortcut = Some(shortcut);
+            }
 
             Ok(())
         })
@@ -208,6 +324,8 @@ pub fn run() {
             get_recording_status,
             copy_to_clipboard,
             paste_text,
+            get_shortcut,
+            set_shortcut,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
