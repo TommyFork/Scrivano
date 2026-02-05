@@ -6,10 +6,9 @@ use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{
-    AppHandle, Emitter, Manager,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    ActivationPolicy,
+    ActivationPolicy, AppHandle, Emitter, Manager,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -52,12 +51,11 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let window_width = 320;
     let adjusted_x = (x - (window_width / 2)).max(10);
     let _ = window.show();
-    let _ = window.set_position(tauri::Position::Physical(
-        tauri::PhysicalPosition::new(adjusted_x, y),
-    ));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+        adjusted_x, y,
+    )));
     let _ = window.set_focus();
 }
-
 
 async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
     let api_key = match get_api_key() {
@@ -73,7 +71,10 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
 
     match transcription::transcribe_audio(&audio_path, &api_key).await {
         Ok(text) => {
-            app.state::<Mutex<AppState>>().lock().unwrap().last_transcription = text.clone();
+            app.state::<Mutex<AppState>>()
+                .lock()
+                .unwrap()
+                .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
             if let Err(e) = paste::set_clipboard_and_paste(&text) {
@@ -124,8 +125,13 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    use tauri::tray::{TrayIconEvent, MouseButtonState};
-                    if let TrayIconEvent::Click { rect, button_state: MouseButtonState::Down, .. } = event {
+                    use tauri::tray::{MouseButtonState, TrayIconEvent};
+                    if let TrayIconEvent::Click {
+                        rect,
+                        button_state: MouseButtonState::Down,
+                        ..
+                    } = event
+                    {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
@@ -159,19 +165,18 @@ pub fn run() {
                         let app_state = app.state::<Mutex<AppState>>();
 
                         match event.state() {
-                            ShortcutState::Pressed => {
-                                match audio::start_recording() {
-                                    Ok(handle) => {
-                                        recorder_state.lock().unwrap().handle = Some(handle);
-                                        app_state.lock().unwrap().is_recording = true;
-                                        let _ = app.emit("recording-status", true);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to start recording: {}", e);
-                                        let _ = app.emit("error", format!("Failed to start recording: {}", e));
-                                    }
+                            ShortcutState::Pressed => match audio::start_recording() {
+                                Ok(handle) => {
+                                    recorder_state.lock().unwrap().handle = Some(handle);
+                                    app_state.lock().unwrap().is_recording = true;
+                                    let _ = app.emit("recording-status", true);
                                 }
-                            }
+                                Err(e) => {
+                                    eprintln!("Failed to start recording: {}", e);
+                                    let _ = app
+                                        .emit("error", format!("Failed to start recording: {}", e));
+                                }
+                            },
                             ShortcutState::Released => {
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
@@ -179,17 +184,18 @@ pub fn run() {
 
                                 if let Some(handle) = handle {
                                     let app_clone = app.clone();
-                                    std::thread::spawn(move || {
-                                        match handle.stop() {
-                                            Ok(path) => {
-                                                tauri::async_runtime::block_on(
-                                                    handle_recording_stop(app_clone, path)
-                                                );
-                                            }
-                                            Err(e) => {
-                                                eprintln!("Failed to stop recording: {}", e);
-                                                let _ = app_clone.emit("error", format!("Failed to stop recording: {}", e));
-                                            }
+                                    std::thread::spawn(move || match handle.stop() {
+                                        Ok(path) => {
+                                            tauri::async_runtime::block_on(handle_recording_stop(
+                                                app_clone, path,
+                                            ));
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Failed to stop recording: {}", e);
+                                            let _ = app_clone.emit(
+                                                "error",
+                                                format!("Failed to stop recording: {}", e),
+                                            );
                                         }
                                     });
                                 }

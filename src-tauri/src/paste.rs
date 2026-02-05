@@ -7,7 +7,11 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to spawn pbcopy: {}", e))?;
 
-    child.stdin.take().unwrap().write_all(text.as_bytes())
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(text.as_bytes())
         .map_err(|e| format!("Failed to write to pbcopy: {}", e))?;
 
     child.wait().map_err(|e| format!("pbcopy failed: {}", e))?;
@@ -24,7 +28,10 @@ pub fn set_clipboard_and_paste(text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
 
     if !output.status.success() {
-        return Err(format!("AppleScript error: {}", String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "AppleScript error: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
 
     Ok(())
