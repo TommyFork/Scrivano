@@ -594,6 +594,12 @@
   margin: 0;
 }
 
+.settings-hint {
+  font-size: 11px;
+  color: var(--ink-faded);
+  opacity: 0.8;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    SHORTCUT DISPLAY BOX
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -651,23 +657,61 @@
   width: 100%;
   border: none;
   background: transparent;
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 16px;
-  font-style: italic;
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-size: 22px;
+  font-weight: 600;
   color: var(--wax-red);
   text-align: center;
   outline: none;
   caret-color: transparent;
+  letter-spacing: 2px;
 }
 
 .shortcut-input::placeholder {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 16px;
+  font-weight: 400;
+  font-style: italic;
   color: var(--wax-red);
-  opacity: 1;
+  opacity: 0.7;
+  letter-spacing: normal;
 }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+.shortcut-error-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--error-bg);
+  border: 2px solid var(--wax-red);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px 3px rgba(139, 37, 0, 0.1),
+    0 2px 4px rgba(44, 24, 16, 0.15);
+}
+
+.shortcut-error-icon {
+  font-size: 16px;
+  color: var(--wax-red);
+}
+
+.shortcut-error-box span:last-child {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--error-ink);
+  line-height: 1.4;
+}
+
+.shortcut-display-error {
+  border-color: var(--wax-red);
+  opacity: 0.6;
 }
 
 .shortcut-actions {

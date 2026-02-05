@@ -73,14 +73,14 @@ fn set_shortcut(
     modifiers: Vec<String>,
     key: String,
 ) -> Result<ShortcutInfo, String> {
+    // Check for multi-key shortcuts (not supported by global shortcut API)
+    if key.contains('+') {
+        return Err("Multi-key shortcuts (e.g., R+L) are not supported. Use modifier keys (⌘⇧⌃⌥) with a single key.".to_string());
+    }
+
     // Validate the key
     if settings::parse_key(&key).is_none() {
         return Err(format!("Invalid key: {}", key));
-    }
-
-    // Validate at least one modifier
-    if modifiers.is_empty() {
-        return Err("At least one modifier key is required".to_string());
     }
 
     let new_config = ShortcutConfig {
@@ -91,7 +91,8 @@ fn set_shortcut(
     // Build the new shortcut
     let parsed_modifiers = settings::parse_modifiers(&modifiers);
     let parsed_key = settings::parse_key(&key).unwrap();
-    let new_shortcut = Shortcut::new(Some(parsed_modifiers), parsed_key);
+    let mods = if parsed_modifiers.is_empty() { None } else { Some(parsed_modifiers) };
+    let new_shortcut = Shortcut::new(mods, parsed_key);
 
     // Unregister the old shortcut
     {
@@ -242,7 +243,8 @@ pub fn run() {
             let parsed_modifiers = settings::parse_modifiers(&shortcut_config.modifiers);
             let parsed_key = settings::parse_key(&shortcut_config.key)
                 .unwrap_or(Code::Space);
-            let shortcut = Shortcut::new(Some(parsed_modifiers), parsed_key);
+            let mods = if parsed_modifiers.is_empty() { None } else { Some(parsed_modifiers) };
+            let shortcut = Shortcut::new(mods, parsed_key);
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
