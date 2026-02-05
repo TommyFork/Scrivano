@@ -22,9 +22,9 @@ describe("App", () => {
 
     expect(screen.getByText("Awaiting thy voice")).toBeInTheDocument();
     expect(
-      screen.getByText("Speak unto the aether with Cmd+Shift+Space")
+      screen.getByText("Speak unto the aether with ⌘⇧Space")
     ).toBeInTheDocument();
-    expect(screen.getByText("Summon the scribe: Cmd+Shift+Space")).toBeInTheDocument();
+    expect(screen.getByText(/Summon the scribe:/)).toBeInTheDocument();
   });
 
   it("fetches initial transcription and recording status on mount", async () => {
@@ -230,6 +230,178 @@ describe("App", () => {
     await waitFor(() => {
       const indicator = document.querySelector(".status-indicator.recording");
       expect(indicator).toBeInTheDocument();
+    });
+  });
+
+  describe("Settings and Shortcut Recording", () => {
+    beforeEach(() => {
+      mockedInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_transcription") return Promise.resolve("");
+        if (cmd === "get_recording_status") return Promise.resolve(false);
+        if (cmd === "get_shortcut")
+          return Promise.resolve({
+            modifiers: ["super", "shift"],
+            key: "space",
+            display: "⌘⇧Space",
+          });
+        return Promise.resolve("");
+      });
+    });
+
+    it("opens settings when gear button is clicked", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle("Settings")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Settings"));
+
+      expect(screen.getByText("Configuration")).toBeInTheDocument();
+      expect(screen.getByText("Recording Shortcut")).toBeInTheDocument();
+    });
+
+    it("shows current shortcut in settings", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle("Settings")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText("⌘⇧Space")).toBeInTheDocument();
+      });
+    });
+
+    it("enters recording mode when Change button is clicked", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTitle("Settings")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTitle("Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Change")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Change"));
+
+      expect(screen.getByPlaceholderText("Press thy keys...")).toBeInTheDocument();
+      expect(screen.getByText("Cease")).toBeInTheDocument();
+    });
+
+    it("shows Cease button during recording mode", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(screen.getByTitle("Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Change")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Change"));
+
+      // Should show recording input and Cease button
+      expect(screen.getByPlaceholderText("Press thy keys...")).toBeInTheDocument();
+      expect(screen.getByText("Cease")).toBeInTheDocument();
+    });
+
+    it("returns to main view when Return button is clicked", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(screen.getByTitle("Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Return")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Return"));
+
+      // Should be back on main screen
+      expect(screen.getByText("Awaiting thy voice")).toBeInTheDocument();
+    });
+
+    it("records shortcut on keyboard input", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(screen.getByTitle("Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Change")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Change"));
+
+      // Verify input is shown
+      expect(screen.getByPlaceholderText("Press thy keys...")).toBeInTheDocument();
+
+      // Simulate Cmd+K keydown
+      await user.keyboard("{Meta>}k{/Meta}");
+
+      await waitFor(() => {
+        // After keys released, should show pending shortcut with Inscribe button
+        expect(screen.queryByText("Inscribe")).toBeInTheDocument();
+      });
+    });
+
+    it("saves shortcut when Inscribe button is clicked", async () => {
+      const user = userEvent.setup();
+      mockedInvoke.mockImplementation((cmd: string, args?: unknown) => {
+        if (cmd === "get_transcription") return Promise.resolve("");
+        if (cmd === "get_recording_status") return Promise.resolve(false);
+        if (cmd === "get_shortcut")
+          return Promise.resolve({
+            modifiers: ["super", "shift"],
+            key: "space",
+            display: "⌘⇧Space",
+          });
+        if (cmd === "set_shortcut") {
+          const { modifiers, key } = args as {
+            modifiers: string[];
+            key: string;
+          };
+          return Promise.resolve({
+            modifiers,
+            key,
+            display: "⌘K",
+          });
+        }
+        return Promise.resolve("");
+      });
+
+      render(<App />);
+
+      await user.click(screen.getByTitle("Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Change")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Change"));
+
+      // Type the shortcut
+      await user.keyboard("{Meta>}k{/Meta}");
+
+      await waitFor(() => {
+        expect(screen.queryByText("Inscribe")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Inscribe"));
+
+      expect(mockedInvoke).toHaveBeenCalledWith("set_shortcut", {
+        modifiers: expect.any(Array),
+        key: "k",
+      });
     });
   });
 });
