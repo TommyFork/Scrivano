@@ -5,10 +5,12 @@ mod transcription;
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    ActivationPolicy, AppHandle, Emitter, Manager,
+    AppHandle, Emitter, Manager,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
