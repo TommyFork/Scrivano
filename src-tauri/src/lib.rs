@@ -7,6 +7,8 @@ use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
 use settings::ShortcutConfig;
 use std::sync::Mutex;
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
