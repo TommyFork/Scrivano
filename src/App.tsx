@@ -104,7 +104,7 @@ function App() {
   }, []);
 
   // Key down handler
-  const handleShortcutKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+  const handleShortcutKeyDown = useCallback((e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -130,7 +130,7 @@ function App() {
   }, [isRecordingShortcutActive, syncRecorderState]);
 
   // Key up handler
-  const handleShortcutKeyUp = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+  const handleShortcutKeyUp = useCallback((e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
