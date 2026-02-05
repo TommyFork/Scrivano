@@ -311,7 +311,7 @@ pub fn run() {
 
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(|app, _shortcut_ref, event| {
+                    .with_handler(move |app, _shortcut_ref, event| {
                         // Handle any registered shortcut (we only register one for recording)
                         let recorder_state = app.state::<Mutex<RecorderState>>();
                         let app_state = app.state::<Mutex<AppState>>();
