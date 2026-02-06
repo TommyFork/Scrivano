@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
 #[cfg(target_os = "macos")]
@@ -453,13 +453,27 @@ pub fn run() {
                                             state.original_app = original_app;
                                         }
 
-                                        // Start polling thread for audio levels
+                                        // Start polling thread for audio levels.
+                                        // Wait for the indicator window to signal it's ready
+                                        // before emitting events, with a timeout fallback.
                                         let app_clone = app.clone();
+                                        let ready = Arc::new(AtomicBool::new(false));
+                                        let ready_clone = Arc::clone(&ready);
+                                        let listener_id = app.listen("indicator-ready", move |_| {
+                                            ready_clone.store(true, Ordering::Relaxed);
+                                        });
+
+                                        let app_for_unlisten = app.clone();
                                         std::thread::spawn(move || {
-                                            // Give the indicator window time to load
-                                            std::thread::sleep(std::time::Duration::from_millis(
-                                                150,
-                                            ));
+                                            // Wait up to 2s for indicator to signal ready
+                                            let start = std::time::Instant::now();
+                                            while !ready.load(Ordering::Relaxed)
+                                                && start.elapsed().as_millis() < 2000
+                                                && !stop_flag.load(Ordering::Relaxed)
+                                            {
+                                                std::thread::sleep(std::time::Duration::from_millis(20));
+                                            }
+                                            app_for_unlisten.unlisten(listener_id);
 
                                             while !stop_flag.load(Ordering::Relaxed) {
                                                 let levels =

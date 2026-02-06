@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import "./Indicator.css";
 
 type IndicatorState = "recording" | "processing" | "success";
@@ -17,6 +17,11 @@ function Indicator() {
         setState(e.payload as IndicatorState);
       }),
     ];
+
+    // Signal to the backend that our listeners are ready
+    Promise.all(unlisteners).then(() => {
+      emit("indicator-ready", true);
+    });
 
     return () => {
       unlisteners.forEach((p) => p.then((fn) => fn()));

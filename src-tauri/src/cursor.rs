@@ -16,8 +16,11 @@ mod macos {
     type AXValueRef = *mut c_void;
     type AXError = i32;
 
+    #[allow(non_upper_case_globals)]
     const kAXErrorSuccess: AXError = 0;
+    #[allow(non_upper_case_globals)]
     const kAXValueTypeCGPoint: u32 = 1;
+    #[allow(non_upper_case_globals)]
     const kAXValueTypeCGRect: u32 = 3;
 
     // Link against ApplicationServices framework
@@ -91,8 +94,10 @@ mod macos {
         pub y: i32,
     }
 
-    /// Try to get the text caret position using Accessibility APIs.
-    /// Falls back through: AXBoundsForRange → AXPosition of focused element.
+    /// Try to get the text caret position using AXBoundsForRange.
+    /// Returns None if accessibility fails or returns invalid coordinates.
+    /// Validates the result against the focused element's bounds to catch
+    /// broken implementations (e.g., Chrome returning x=0).
     pub fn get_caret_position() -> Option<CursorPosition> {
         if !is_accessibility_enabled() {
             return None;
@@ -104,7 +109,6 @@ mod macos {
                 return None;
             }
 
-            // Get the focused UI element
             let focused_attr = CFString::new("AXFocusedUIElement");
             let mut focused_element: CFTypeRef = ptr::null_mut();
 
@@ -113,14 +117,43 @@ mod macos {
                 focused_attr.as_concrete_TypeRef(),
                 &mut focused_element,
             );
-
             CFRelease(system_wide as CFTypeRef);
 
             if result != kAXErrorSuccess || focused_element.is_null() {
                 return None;
             }
 
-            // Try to get exact caret position via AXSelectedTextRange + AXBoundsForRange
+            // Get the element's own position for validation
+            let pos_attr = CFString::new("AXPosition");
+            let size_attr = CFString::new("AXSize");
+            let mut pos_value: CFTypeRef = ptr::null_mut();
+            let mut size_value: CFTypeRef = ptr::null_mut();
+
+            let mut elem_x = 0.0_f64;
+            let mut elem_y = 0.0_f64;
+            let mut elem_w = 0.0_f64;
+            let mut elem_h = 0.0_f64;
+            let mut have_elem_bounds = false;
+
+            if AXUIElementCopyAttributeValue(focused_element as AXUIElementRef, pos_attr.as_concrete_TypeRef(), &mut pos_value) == kAXErrorSuccess && !pos_value.is_null() {
+                let mut point = CGPoint { x: 0.0, y: 0.0 };
+                if AXValueGetValue(pos_value as AXValueRef, kAXValueTypeCGPoint, &mut point as *mut CGPoint as *mut c_void) {
+                    elem_x = point.x;
+                    elem_y = point.y;
+                    if AXUIElementCopyAttributeValue(focused_element as AXUIElementRef, size_attr.as_concrete_TypeRef(), &mut size_value) == kAXErrorSuccess && !size_value.is_null() {
+                        let mut size = core_graphics::geometry::CGSize { width: 0.0, height: 0.0 };
+                        if AXValueGetValue(size_value as AXValueRef, 2, &mut size as *mut core_graphics::geometry::CGSize as *mut c_void) {
+                            elem_w = size.width;
+                            elem_h = size.height;
+                            have_elem_bounds = true;
+                        }
+                        CFRelease(size_value);
+                    }
+                }
+                CFRelease(pos_value);
+            }
+
+            // Try AXSelectedTextRange + AXBoundsForRange
             let range_attr = CFString::new("AXSelectedTextRange");
             let mut range_value: CFTypeRef = ptr::null_mut();
 
@@ -140,7 +173,6 @@ mod macos {
                     range_value,
                     &mut bounds_value,
                 );
-
                 CFRelease(range_value);
 
                 if result == kAXErrorSuccess && !bounds_value.is_null() {
@@ -153,77 +185,40 @@ mod macos {
                     CFRelease(bounds_value);
 
                     if success {
-                        eprintln!("[Scrivano] Got exact caret position: ({}, {})", rect.origin.x as i32, rect.origin.y as i32);
-                        CFRelease(focused_element);
-                        return Some(CursorPosition {
-                            x: rect.origin.x as i32,
-                            y: rect.origin.y as i32,
-                        });
+                        let cx = rect.origin.x;
+                        let cy = rect.origin.y;
+
+                        // Validate: caret should be within (or very near) the element bounds.
+                        // Chrome returns x=0 which is clearly wrong for a URL bar.
+                        let valid = if have_elem_bounds {
+                            let margin = 20.0;
+                            cx >= elem_x - margin
+                                && cx <= elem_x + elem_w + margin
+                                && cy >= elem_y - margin
+                                && cy <= elem_y + elem_h + margin
+                        } else {
+                            // No element bounds to check against — accept if x > 0
+                            cx > 0.0
+                        };
+
+                        if valid {
+                            eprintln!("[Scrivano] Caret position: ({}, {})", cx as i32, cy as i32);
+                            CFRelease(focused_element);
+                            return Some(CursorPosition {
+                                x: cx as i32,
+                                y: cy as i32,
+                            });
+                        } else {
+                            eprintln!("[Scrivano] AXBoundsForRange returned invalid position ({}, {}), element at ({}, {}) {}x{} — using mouse",
+                                cx as i32, cy as i32, elem_x as i32, elem_y as i32, elem_w as i32, elem_h as i32);
+                        }
                     }
                 }
             } else if !range_value.is_null() {
                 CFRelease(range_value);
             }
 
-            // Fallback: get position + size of the focused element, place at bottom
-            let pos_attr = CFString::new("AXPosition");
-            let size_attr = CFString::new("AXSize");
-            let mut pos_value: CFTypeRef = ptr::null_mut();
-            let mut size_value: CFTypeRef = ptr::null_mut();
-
-            let pos_ok = AXUIElementCopyAttributeValue(
-                focused_element as AXUIElementRef,
-                pos_attr.as_concrete_TypeRef(),
-                &mut pos_value,
-            );
-            let size_ok = AXUIElementCopyAttributeValue(
-                focused_element as AXUIElementRef,
-                size_attr.as_concrete_TypeRef(),
-                &mut size_value,
-            );
-
             CFRelease(focused_element);
-
-            if pos_ok == kAXErrorSuccess && !pos_value.is_null() {
-                let mut point = CGPoint { x: 0.0, y: 0.0 };
-                let got_pos = AXValueGetValue(
-                    pos_value as AXValueRef,
-                    kAXValueTypeCGPoint,
-                    &mut point as *mut CGPoint as *mut c_void,
-                );
-                CFRelease(pos_value);
-
-                // Try to get size to position at bottom of element
-                let mut elem_height = 0.0_f64;
-                if size_ok == kAXErrorSuccess && !size_value.is_null() {
-                    let mut size = core_graphics::geometry::CGSize { width: 0.0, height: 0.0 };
-                    let got_size = AXValueGetValue(
-                        size_value as AXValueRef,
-                        2, // kAXValueTypeCGSize
-                        &mut size as *mut core_graphics::geometry::CGSize as *mut c_void,
-                    );
-                    CFRelease(size_value);
-                    if got_size {
-                        elem_height = size.height;
-                    }
-                } else if !size_value.is_null() {
-                    CFRelease(size_value);
-                }
-
-                if got_pos {
-                    // Position at bottom-left of element (closer to where cursor typically is)
-                    let y = point.y as i32 + elem_height as i32;
-                    eprintln!("[Scrivano] Using focused element bottom: ({}, {})", point.x as i32, y);
-                    return Some(CursorPosition {
-                        x: point.x as i32,
-                        y,
-                    });
-                }
-            } else {
-                if !pos_value.is_null() { CFRelease(pos_value); }
-                if !size_value.is_null() { CFRelease(size_value); }
-            }
-
             None
         }
     }
