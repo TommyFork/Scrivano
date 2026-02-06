@@ -35,12 +35,36 @@ mod macos {
             value: *mut CFTypeRef,
         ) -> AXError;
         fn AXValueGetValue(value: AXValueRef, value_type: u32, value_ptr: *mut c_void) -> bool;
-        fn AXIsProcessTrusted() -> bool;
+        fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
     }
 
-    /// Check if the app has accessibility permissions
-    pub fn is_accessibility_enabled() -> bool {
-        unsafe { AXIsProcessTrusted() }
+    /// Check if the app has accessibility permissions.
+    /// If `prompt` is true and permission is not granted, shows the macOS
+    /// system dialog asking the user to grant it.
+    pub fn check_accessibility(prompt: bool) -> bool {
+        unsafe {
+            if prompt {
+                use core_foundation::base::TCFType as _;
+                use core_foundation::boolean::CFBoolean;
+                use core_foundation::dictionary::CFDictionary;
+
+                let key = CFString::new("AXTrustedCheckOptionPrompt");
+                let value = if prompt {
+                    CFBoolean::true_value()
+                } else {
+                    CFBoolean::false_value()
+                };
+
+                let dict = CFDictionary::from_CFType_pairs(&[(
+                    key.as_CFType(),
+                    value.as_CFType(),
+                )]);
+
+                AXIsProcessTrustedWithOptions(dict.as_CFTypeRef())
+            } else {
+                AXIsProcessTrustedWithOptions(ptr::null())
+            }
+        }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -51,8 +75,8 @@ mod macos {
 
     /// Try to get the text caret position using Accessibility APIs
     pub fn get_caret_position() -> Option<CursorPosition> {
-        if !is_accessibility_enabled() {
-            eprintln!("[Scrivano] Accessibility permission not granted. Enable it in System Settings > Privacy & Security > Accessibility to position indicator at text caret.");
+        if !check_accessibility(true) {
+            eprintln!("[Scrivano] Accessibility permission not granted. A system prompt should appear - grant access, then restart Scrivano.");
             return None;
         }
 
