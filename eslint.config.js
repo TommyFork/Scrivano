@@ -26,6 +26,7 @@ export default [
         setInterval: 'readonly',
         clearInterval: 'readonly',
         HTMLElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
         MouseEvent: 'readonly',
         KeyboardEvent: 'readonly',
         MediaRecorder: 'readonly',
@@ -33,6 +34,7 @@ export default [
         FileReader: 'readonly',
         AudioContext: 'readonly',
         navigator: 'readonly',
+        requestAnimationFrame: 'readonly',
       },
     },
     plugins: {

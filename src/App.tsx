@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import {
   createShortcutRecorder,
@@ -15,13 +16,14 @@ interface ShortcutInfo {
   display: string;
 }
 
+const STATUS_DISPLAY_DURATION = 1500;
+
 function App() {
-  const [transcription, setTranscription] = useState("");
+  const [text, setText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Awaiting thy voice");
-  const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState("");
   const [error, setError] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
@@ -35,7 +37,9 @@ function App() {
   const recorderRef = useRef<ShortcutRecorder>(createShortcutRecorder());
 
   useEffect(() => {
-    invoke<string>("get_transcription").then(setTranscription);
+    invoke<string>("get_transcription").then((t) => {
+      if (t) setText(t);
+    });
     invoke<boolean>("get_recording_status").then(setIsRecording);
     invoke<ShortcutInfo>("get_shortcut").then(setCurrentShortcut);
 
@@ -46,7 +50,7 @@ function App() {
         if (e.payload) setError("");
       }),
       listen<string>("transcription", (e) => {
-        setTranscription(e.payload);
+        setText(e.payload);
         setStatus("Awaiting thy voice");
       }),
       listen<string>("transcription-status", (e) => setStatus(e.payload)),
@@ -56,7 +60,21 @@ function App() {
       }),
     ];
 
-    return () => { unlisteners.forEach((p) => p.then((fn) => fn())); };
+    // Auto-focus textarea when window gains focus
+    const currentWindow = getCurrentWindow();
+    const focusUnlisten = currentWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused && textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    });
+
+    // Initial focus
+    requestAnimationFrame(() => textareaRef.current?.focus());
+
+    return () => {
+      unlisteners.forEach((p) => p.then((fn) => fn()));
+      focusUnlisten.then((fn) => fn());
+    };
   }, []);
 
   useEffect(() => {
@@ -80,21 +98,10 @@ function App() {
 
   const handleCopy = async () => {
     try {
-      await invoke("copy_to_clipboard", { text: transcription });
+      await invoke("copy_to_clipboard", { text });
       setError("");
       setStatus("'Tis copied!");
-      setTimeout(() => setStatus("Awaiting thy voice"), 1500);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    setTranscription(editText);
-    setIsEditing(false);
-    try {
-      await invoke("paste_text", { text: editText });
-      setError("");
+      setTimeout(() => setStatus("Awaiting thy voice"), STATUS_DISPLAY_DURATION);
     } catch (e) {
       setError(String(e));
     }
@@ -307,32 +314,19 @@ function App() {
       {error && <div className="error">{error}</div>}
 
       <div className="content">
-        {isEditing ? (
-          <textarea
-            className="edit-area"
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            autoFocus
-          />
-        ) : (
-          <div className="transcription">
-            {transcription || `Speak unto the aether with ${currentShortcut?.display || "⌘⇧Space"}`}
-          </div>
-        )}
+        <textarea
+          ref={textareaRef}
+          className="edit-area"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={`Speak unto the aether with ${currentShortcut?.display || "⌘⇧Space"}`}
+          aria-label="Transcription text"
+          spellCheck={false}
+        />
       </div>
 
       <div className="actions">
-        {isEditing ? (
-          <>
-            <button onClick={handleSaveEdit} className="btn primary">Inscribe</button>
-            <button onClick={() => setIsEditing(false)} className="btn">Withdraw</button>
-          </>
-        ) : (
-          <>
-            <button onClick={handleCopy} className="btn" disabled={!transcription}>Duplicate</button>
-            <button onClick={() => { setEditText(transcription); setIsEditing(true); }} className="btn" disabled={!transcription}>Amend</button>
-          </>
-        )}
+        <button onClick={handleCopy} className="btn" disabled={!text}>Duplicate</button>
       </div>
 
       <div className="hint">Summon the scribe: {currentShortcut?.display || "⌘⇧Space"}</div>
