@@ -9,21 +9,16 @@ function Indicator() {
   const [audioLevels, setAudioLevels] = useState<number[]>([0.2, 0.3, 0.2, 0.3, 0.2]);
 
   useEffect(() => {
-    console.log("Indicator mounted, setting up listeners");
-
     const unlisteners = [
       listen<number[]>("audio-levels", (e) => {
-        console.log("Received audio levels:", e.payload);
         setAudioLevels(e.payload);
       }),
       listen<string>("indicator-state", (e) => {
-        console.log("Received state change:", e.payload);
         setState(e.payload as IndicatorState);
       }),
     ];
 
     return () => {
-      console.log("Indicator unmounting, cleaning up listeners");
       unlisteners.forEach((p) => p.then((fn) => fn()));
     };
   }, []);

@@ -178,7 +178,7 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let _ = window.set_focus();
 }
 
-fn create_indicator_window(app: &AppHandle, x: i32, y: i32) -> Option<tauri::WebviewWindow> {
+fn create_indicator_window(app: &AppHandle, x: i32, y: i32, is_caret: bool) -> Option<tauri::WebviewWindow> {
     // Close existing indicator window if any
     if let Some(existing) = app.get_webview_window("indicator") {
         let _ = existing.close();
@@ -188,9 +188,14 @@ fn create_indicator_window(app: &AppHandle, x: i32, y: i32) -> Option<tauri::Web
     let width = 60.0;
     let height = 36.0;
 
-    // Position slightly above and to the right of cursor
-    let pos_x = x + 10;
-    let pos_y = y - 45;
+    // Position relative to the reference point.
+    // If caret: place just to the right of the caret at the same height.
+    // If mouse fallback: place slightly above and to the right.
+    let (pos_x, pos_y) = if is_caret {
+        (x + 4, y)
+    } else {
+        (x + 10, y - 45)
+    };
 
     let url = WebviewUrl::App("index.html?window=indicator".into());
 
@@ -228,9 +233,7 @@ async fn handle_recording_stop(
     original_app: Option<String>,
 ) {
     // Update indicator to processing state
-    if let Some(indicator) = app.get_webview_window("indicator") {
-        let _ = indicator.emit("indicator-state", "processing");
-    }
+    let _ = app.emit("indicator-state", "processing");
 
     let api_key = match get_api_key() {
         Ok(key) => key,
@@ -253,9 +256,7 @@ async fn handle_recording_stop(
             let _ = app.emit("transcription", text.clone());
 
             // Show success briefly
-            if let Some(indicator) = app.get_webview_window("indicator") {
-                let _ = indicator.emit("indicator-state", "success");
-            }
+            let _ = app.emit("indicator-state", "success");
 
             // Hide indicator first, then paste to original app
             hide_indicator_window(&app);
@@ -407,14 +408,20 @@ pub fn run() {
                                 match audio::start_recording() {
                                     Ok(handle) => {
                                         // Get cursor position for indicator placement
-                                        let (cursor_x, cursor_y) =
+                                        let (cursor_x, cursor_y, is_caret) =
                                             match cursor::get_cursor_position() {
-                                                Ok(pos) => (pos.x, pos.y),
-                                                Err(_) => (100, 100), // Fallback position
+                                                Ok(pos) => (pos.x, pos.y, pos.is_caret),
+                                                Err(_) => (100, 100, false),
                                             };
 
                                         // Create indicator window at cursor position
-                                        let _ = create_indicator_window(app, cursor_x, cursor_y);
+                                        let _ = create_indicator_window(app, cursor_x, cursor_y, is_caret);
+
+                                        // Immediately re-activate the original app so focus isn't stolen.
+                                        // The indicator stays visible because always_on_top is set.
+                                        if let Some(ref bundle_id) = original_app {
+                                            let _ = paste::activate_app(bundle_id);
+                                        }
 
                                         // Get the audio levels Arc before storing the handle
                                         let audio_levels_arc = handle.get_audio_levels_arc();
@@ -437,18 +444,9 @@ pub fn run() {
                                             ));
 
                                             while !stop_flag.load(Ordering::Relaxed) {
-                                                // Get audio levels directly from the Arc
                                                 let levels =
                                                     audio_levels_arc.lock().unwrap().clone();
-                                                // Emit to indicator window specifically
-                                                if let Some(indicator) =
-                                                    app_clone.get_webview_window("indicator")
-                                                {
-                                                    eprintln!("Emitting audio levels to indicator: {:?}", levels);
-                                                    let _ = indicator.emit("audio-levels", &levels);
-                                                } else {
-                                                    eprintln!("Indicator window not found!");
-                                                }
+                                                let _ = app_clone.emit("audio-levels", &levels);
                                                 std::thread::sleep(
                                                     std::time::Duration::from_millis(50),
                                                 );

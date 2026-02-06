@@ -35,6 +35,12 @@ mod macos {
             value: *mut CFTypeRef,
         ) -> AXError;
         fn AXValueGetValue(value: AXValueRef, value_type: u32, value_ptr: *mut c_void) -> bool;
+        fn AXIsProcessTrusted() -> bool;
+    }
+
+    /// Check if the app has accessibility permissions
+    pub fn is_accessibility_enabled() -> bool {
+        unsafe { AXIsProcessTrusted() }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -45,10 +51,15 @@ mod macos {
 
     /// Try to get the text caret position using Accessibility APIs
     pub fn get_caret_position() -> Option<CursorPosition> {
+        if !is_accessibility_enabled() {
+            eprintln!("[Scrivano] Accessibility permission not granted. Enable it in System Settings > Privacy & Security > Accessibility to position indicator at text caret.");
+            return None;
+        }
+
         unsafe {
-            // Create system-wide accessibility element
             let system_wide = AXUIElementCreateSystemWide();
             if system_wide.is_null() {
+                eprintln!("[Scrivano] Failed to create system-wide AX element");
                 return None;
             }
 
@@ -65,6 +76,7 @@ mod macos {
             CFRelease(system_wide as CFTypeRef);
 
             if result != kAXErrorSuccess || focused_element.is_null() {
+                eprintln!("[Scrivano] No focused UI element found (AX error: {})", result);
                 return None;
             }
 
@@ -79,6 +91,7 @@ mod macos {
             );
 
             if result != kAXErrorSuccess || range_value.is_null() {
+                eprintln!("[Scrivano] Focused element doesn't have AXSelectedTextRange (AX error: {}). Not a text field?", result);
                 CFRelease(focused_element);
                 return None;
             }
@@ -98,6 +111,7 @@ mod macos {
             CFRelease(focused_element);
 
             if result != kAXErrorSuccess || bounds_value.is_null() {
+                eprintln!("[Scrivano] Failed to get AXBoundsForRange (AX error: {})", result);
                 return None;
             }
 
@@ -117,6 +131,7 @@ mod macos {
                     y: rect.origin.y as i32,
                 })
             } else {
+                eprintln!("[Scrivano] Failed to extract CGRect from AXValue");
                 None
             }
         }
@@ -142,20 +157,21 @@ mod macos {
 pub struct CursorPosition {
     pub x: i32,
     pub y: i32,
+    pub is_caret: bool,
 }
 
 #[cfg(target_os = "macos")]
 pub fn get_cursor_position() -> Result<CursorPosition, String> {
     // Try to get caret position first
     if let Some(pos) = macos::get_caret_position() {
-        eprintln!("Got caret position via Accessibility: ({}, {})", pos.x, pos.y);
-        return Ok(CursorPosition { x: pos.x, y: pos.y });
+        eprintln!("[Scrivano] Got caret position via Accessibility: ({}, {})", pos.x, pos.y);
+        return Ok(CursorPosition { x: pos.x, y: pos.y, is_caret: true });
     }
 
     // Fall back to mouse position
-    eprintln!("Caret detection failed, falling back to mouse position");
+    eprintln!("[Scrivano] Caret detection failed, falling back to mouse position");
     if let Some(pos) = macos::get_mouse_position() {
-        return Ok(CursorPosition { x: pos.x, y: pos.y });
+        return Ok(CursorPosition { x: pos.x, y: pos.y, is_caret: false });
     }
 
     Err("Failed to get cursor position".to_string())
