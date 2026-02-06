@@ -185,23 +185,35 @@ fn create_indicator_window(app: &AppHandle, x: i32, y: i32, is_caret: bool) -> O
     }
 
     // Indicator dimensions
-    let width = 60.0;
-    let height = 36.0;
+    let width: i32 = 60;
+    let height: i32 = 36;
 
     // Position relative to the reference point.
-    // If caret: place just to the right of the caret at the same height.
-    // If mouse fallback: place slightly above and to the right.
-    let (pos_x, pos_y) = if is_caret {
-        (x + 4, y)
+    // If caret: place just to the right and slightly above.
+    // If mouse fallback: place above and to the right.
+    let (mut pos_x, mut pos_y) = if is_caret {
+        (x + 4, y - height)
     } else {
         (x + 10, y - 45)
     };
+
+    // Clamp to screen bounds so the indicator is always visible
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::display::CGDisplay;
+        let bounds = CGDisplay::main().bounds();
+        let screen_w = bounds.size.width as i32;
+        let screen_h = bounds.size.height as i32;
+
+        pos_x = pos_x.max(4).min(screen_w - width - 4);
+        pos_y = pos_y.max(4).min(screen_h - height - 4);
+    }
 
     let url = WebviewUrl::App("indicator.html".into());
 
     match WebviewWindowBuilder::new(app, "indicator", url)
         .title("Recording")
-        .inner_size(width, height)
+        .inner_size(width as f64, height as f64)
         .position(pos_x as f64, pos_y as f64)
         .decorations(false)
         .transparent(true)

@@ -165,35 +165,63 @@ mod macos {
                 CFRelease(range_value);
             }
 
-            // Fallback: get position of the focused element itself
+            // Fallback: get position + size of the focused element, place at bottom
             let pos_attr = CFString::new("AXPosition");
+            let size_attr = CFString::new("AXSize");
             let mut pos_value: CFTypeRef = ptr::null_mut();
+            let mut size_value: CFTypeRef = ptr::null_mut();
 
-            let result = AXUIElementCopyAttributeValue(
+            let pos_ok = AXUIElementCopyAttributeValue(
                 focused_element as AXUIElementRef,
                 pos_attr.as_concrete_TypeRef(),
                 &mut pos_value,
             );
+            let size_ok = AXUIElementCopyAttributeValue(
+                focused_element as AXUIElementRef,
+                size_attr.as_concrete_TypeRef(),
+                &mut size_value,
+            );
 
-            if result == kAXErrorSuccess && !pos_value.is_null() {
+            CFRelease(focused_element);
+
+            if pos_ok == kAXErrorSuccess && !pos_value.is_null() {
                 let mut point = CGPoint { x: 0.0, y: 0.0 };
-                let success = AXValueGetValue(
+                let got_pos = AXValueGetValue(
                     pos_value as AXValueRef,
                     kAXValueTypeCGPoint,
                     &mut point as *mut CGPoint as *mut c_void,
                 );
                 CFRelease(pos_value);
-                CFRelease(focused_element);
 
-                if success {
-                    eprintln!("[Scrivano] Using focused element position: ({}, {})", point.x as i32, point.y as i32);
+                // Try to get size to position at bottom of element
+                let mut elem_height = 0.0_f64;
+                if size_ok == kAXErrorSuccess && !size_value.is_null() {
+                    let mut size = core_graphics::geometry::CGSize { width: 0.0, height: 0.0 };
+                    let got_size = AXValueGetValue(
+                        size_value as AXValueRef,
+                        2, // kAXValueTypeCGSize
+                        &mut size as *mut core_graphics::geometry::CGSize as *mut c_void,
+                    );
+                    CFRelease(size_value);
+                    if got_size {
+                        elem_height = size.height;
+                    }
+                } else if !size_value.is_null() {
+                    CFRelease(size_value);
+                }
+
+                if got_pos {
+                    // Position at bottom-left of element (closer to where cursor typically is)
+                    let y = point.y as i32 + elem_height as i32;
+                    eprintln!("[Scrivano] Using focused element bottom: ({}, {})", point.x as i32, y);
                     return Some(CursorPosition {
                         x: point.x as i32,
-                        y: point.y as i32,
+                        y,
                     });
                 }
             } else {
-                CFRelease(focused_element);
+                if !pos_value.is_null() { CFRelease(pos_value); }
+                if !size_value.is_null() { CFRelease(size_value); }
             }
 
             None
