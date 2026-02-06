@@ -47,19 +47,40 @@ mod macos {
     /// Should only be called once (e.g., at startup).
     pub fn prompt_accessibility_permission() -> bool {
         unsafe {
-            use core_foundation::base::TCFType as _;
-            use core_foundation::boolean::CFBoolean;
-            use core_foundation::dictionary::CFDictionary;
+            extern "C" {
+                static kCFBooleanTrue: CFTypeRef;
+                fn CFDictionaryCreate(
+                    allocator: CFTypeRef,
+                    keys: *const CFTypeRef,
+                    values: *const CFTypeRef,
+                    num_values: isize,
+                    key_callbacks: *const c_void,
+                    value_callbacks: *const c_void,
+                ) -> CFTypeRef;
+                static kCFTypeDictionaryKeyCallBacks: c_void;
+                static kCFTypeDictionaryValueCallBacks: c_void;
+            }
 
             let key = CFString::new("AXTrustedCheckOptionPrompt");
-            let value = CFBoolean::true_value();
+            let key_ref = key.as_concrete_TypeRef() as CFTypeRef;
 
-            let dict = CFDictionary::from_CFType_pairs(&[(
-                key.as_CFType(),
-                value.as_CFType(),
-            )]);
+            let keys = [key_ref];
+            let values = [kCFBooleanTrue];
 
-            AXIsProcessTrustedWithOptions(dict.as_CFTypeRef())
+            let dict = CFDictionaryCreate(
+                ptr::null(),
+                keys.as_ptr(),
+                values.as_ptr(),
+                1,
+                &kCFTypeDictionaryKeyCallBacks as *const c_void,
+                &kCFTypeDictionaryValueCallBacks as *const c_void,
+            );
+
+            let result = AXIsProcessTrustedWithOptions(dict);
+            if !dict.is_null() {
+                CFRelease(dict);
+            }
+            result
         }
     }
 

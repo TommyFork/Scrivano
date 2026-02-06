@@ -197,7 +197,7 @@ fn create_indicator_window(app: &AppHandle, x: i32, y: i32, is_caret: bool) -> O
         (x + 10, y - 45)
     };
 
-    let url = WebviewUrl::App("index.html".into());
+    let url = WebviewUrl::App("indicator.html".into());
 
     match WebviewWindowBuilder::new(app, "indicator", url)
         .title("Recording")
