@@ -7,7 +7,7 @@
 mod macos {
     use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
     use core_foundation::string::{CFString, CFStringRef};
-    use core_graphics::geometry::CGRect;
+    use core_graphics::geometry::{CGPoint, CGRect};
     use std::ffi::c_void;
     use std::ptr;
 
@@ -17,6 +17,7 @@ mod macos {
     type AXError = i32;
 
     const kAXErrorSuccess: AXError = 0;
+    const kAXValueTypeCGPoint: u32 = 1;
     const kAXValueTypeCGRect: u32 = 3;
 
     // Link against ApplicationServices framework
@@ -90,7 +91,8 @@ mod macos {
         pub y: i32,
     }
 
-    /// Try to get the text caret position using Accessibility APIs
+    /// Try to get the text caret position using Accessibility APIs.
+    /// Falls back through: AXBoundsForRange → AXPosition of focused element.
     pub fn get_caret_position() -> Option<CursorPosition> {
         if !is_accessibility_enabled() {
             return None;
@@ -99,7 +101,6 @@ mod macos {
         unsafe {
             let system_wide = AXUIElementCreateSystemWide();
             if system_wide.is_null() {
-                eprintln!("[Scrivano] Failed to create system-wide AX element");
                 return None;
             }
 
@@ -116,11 +117,10 @@ mod macos {
             CFRelease(system_wide as CFTypeRef);
 
             if result != kAXErrorSuccess || focused_element.is_null() {
-                eprintln!("[Scrivano] No focused UI element found (AX error: {})", result);
                 return None;
             }
 
-            // Get the selected text range (this represents the caret position)
+            // Try to get exact caret position via AXSelectedTextRange + AXBoundsForRange
             let range_attr = CFString::new("AXSelectedTextRange");
             let mut range_value: CFTypeRef = ptr::null_mut();
 
@@ -130,50 +130,73 @@ mod macos {
                 &mut range_value,
             );
 
-            if result != kAXErrorSuccess || range_value.is_null() {
-                eprintln!("[Scrivano] Focused element doesn't have AXSelectedTextRange (AX error: {}). Not a text field?", result);
-                CFRelease(focused_element);
-                return None;
+            if result == kAXErrorSuccess && !range_value.is_null() {
+                let bounds_attr = CFString::new("AXBoundsForRange");
+                let mut bounds_value: CFTypeRef = ptr::null_mut();
+
+                let result = AXUIElementCopyParameterizedAttributeValue(
+                    focused_element as AXUIElementRef,
+                    bounds_attr.as_concrete_TypeRef(),
+                    range_value,
+                    &mut bounds_value,
+                );
+
+                CFRelease(range_value);
+
+                if result == kAXErrorSuccess && !bounds_value.is_null() {
+                    let mut rect = CGRect::default();
+                    let success = AXValueGetValue(
+                        bounds_value as AXValueRef,
+                        kAXValueTypeCGRect,
+                        &mut rect as *mut CGRect as *mut c_void,
+                    );
+                    CFRelease(bounds_value);
+
+                    if success {
+                        eprintln!("[Scrivano] Got exact caret position: ({}, {})", rect.origin.x as i32, rect.origin.y as i32);
+                        CFRelease(focused_element);
+                        return Some(CursorPosition {
+                            x: rect.origin.x as i32,
+                            y: rect.origin.y as i32,
+                        });
+                    }
+                }
+            } else if !range_value.is_null() {
+                CFRelease(range_value);
             }
 
-            // Get bounds for the range using parameterized attribute
-            let bounds_attr = CFString::new("AXBoundsForRange");
-            let mut bounds_value: CFTypeRef = ptr::null_mut();
+            // Fallback: get position of the focused element itself
+            let pos_attr = CFString::new("AXPosition");
+            let mut pos_value: CFTypeRef = ptr::null_mut();
 
-            let result = AXUIElementCopyParameterizedAttributeValue(
+            let result = AXUIElementCopyAttributeValue(
                 focused_element as AXUIElementRef,
-                bounds_attr.as_concrete_TypeRef(),
-                range_value,
-                &mut bounds_value,
+                pos_attr.as_concrete_TypeRef(),
+                &mut pos_value,
             );
 
-            CFRelease(range_value);
-            CFRelease(focused_element);
+            if result == kAXErrorSuccess && !pos_value.is_null() {
+                let mut point = CGPoint { x: 0.0, y: 0.0 };
+                let success = AXValueGetValue(
+                    pos_value as AXValueRef,
+                    kAXValueTypeCGPoint,
+                    &mut point as *mut CGPoint as *mut c_void,
+                );
+                CFRelease(pos_value);
+                CFRelease(focused_element);
 
-            if result != kAXErrorSuccess || bounds_value.is_null() {
-                eprintln!("[Scrivano] Failed to get AXBoundsForRange (AX error: {})", result);
-                return None;
-            }
-
-            // Extract CGRect from AXValue
-            let mut rect = CGRect::default();
-            let success = AXValueGetValue(
-                bounds_value as AXValueRef,
-                kAXValueTypeCGRect,
-                &mut rect as *mut CGRect as *mut c_void,
-            );
-
-            CFRelease(bounds_value);
-
-            if success {
-                Some(CursorPosition {
-                    x: rect.origin.x as i32,
-                    y: rect.origin.y as i32,
-                })
+                if success {
+                    eprintln!("[Scrivano] Using focused element position: ({}, {})", point.x as i32, point.y as i32);
+                    return Some(CursorPosition {
+                        x: point.x as i32,
+                        y: point.y as i32,
+                    });
+                }
             } else {
-                eprintln!("[Scrivano] Failed to extract CGRect from AXValue");
-                None
+                CFRelease(focused_element);
             }
+
+            None
         }
     }
 
