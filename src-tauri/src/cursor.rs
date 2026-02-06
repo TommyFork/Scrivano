@@ -38,32 +38,28 @@ mod macos {
         fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
     }
 
-    /// Check if the app has accessibility permissions.
-    /// If `prompt` is true and permission is not granted, shows the macOS
-    /// system dialog asking the user to grant it.
-    pub fn check_accessibility(prompt: bool) -> bool {
+    /// Check if the app has accessibility permissions (no prompt).
+    pub fn is_accessibility_enabled() -> bool {
+        unsafe { AXIsProcessTrustedWithOptions(ptr::null()) }
+    }
+
+    /// Check accessibility and show the macOS system dialog if not granted.
+    /// Should only be called once (e.g., at startup).
+    pub fn prompt_accessibility_permission() -> bool {
         unsafe {
-            if prompt {
-                use core_foundation::base::TCFType as _;
-                use core_foundation::boolean::CFBoolean;
-                use core_foundation::dictionary::CFDictionary;
+            use core_foundation::base::TCFType as _;
+            use core_foundation::boolean::CFBoolean;
+            use core_foundation::dictionary::CFDictionary;
 
-                let key = CFString::new("AXTrustedCheckOptionPrompt");
-                let value = if prompt {
-                    CFBoolean::true_value()
-                } else {
-                    CFBoolean::false_value()
-                };
+            let key = CFString::new("AXTrustedCheckOptionPrompt");
+            let value = CFBoolean::true_value();
 
-                let dict = CFDictionary::from_CFType_pairs(&[(
-                    key.as_CFType(),
-                    value.as_CFType(),
-                )]);
+            let dict = CFDictionary::from_CFType_pairs(&[(
+                key.as_CFType(),
+                value.as_CFType(),
+            )]);
 
-                AXIsProcessTrustedWithOptions(dict.as_CFTypeRef())
-            } else {
-                AXIsProcessTrustedWithOptions(ptr::null())
-            }
+            AXIsProcessTrustedWithOptions(dict.as_CFTypeRef())
         }
     }
 
@@ -75,8 +71,7 @@ mod macos {
 
     /// Try to get the text caret position using Accessibility APIs
     pub fn get_caret_position() -> Option<CursorPosition> {
-        if !check_accessibility(true) {
-            eprintln!("[Scrivano] Accessibility permission not granted. A system prompt should appear - grant access, then restart Scrivano.");
+        if !is_accessibility_enabled() {
             return None;
         }
 
@@ -183,6 +178,20 @@ pub struct CursorPosition {
     pub y: i32,
     pub is_caret: bool,
 }
+
+/// Prompt for accessibility permission once at startup.
+#[cfg(target_os = "macos")]
+pub fn prompt_accessibility_once() {
+    let granted = macos::prompt_accessibility_permission();
+    if granted {
+        eprintln!("[Scrivano] Accessibility permission granted — caret detection enabled.");
+    } else {
+        eprintln!("[Scrivano] Accessibility permission not granted — will use mouse position. Grant access in System Settings > Privacy & Security > Accessibility.");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn prompt_accessibility_once() {}
 
 #[cfg(target_os = "macos")]
 pub fn get_cursor_position() -> Result<CursorPosition, String> {

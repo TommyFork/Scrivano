@@ -245,6 +245,12 @@ async fn handle_recording_stop(
         }
     };
 
+    // Log audio file info for debugging
+    if let Ok(meta) = std::fs::metadata(&audio_path) {
+        let size_kb = meta.len() as f64 / 1024.0;
+        eprintln!("[Scrivano] Audio file: {:.1} KB", size_kb);
+    }
+
     let _ = app.emit("transcription-status", "Transcribing...");
 
     match transcription::transcribe_audio(&audio_path, &api_key).await {
@@ -505,6 +511,9 @@ pub fn run() {
                     })
                     .build(),
             )?;
+
+            // Prompt for accessibility permission once at startup
+            cursor::prompt_accessibility_once();
 
             // Register the shortcut and store it in state
             app.global_shortcut().register(shortcut)?;

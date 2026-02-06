@@ -30,7 +30,8 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
 
     let form = Form::new()
         .part("file", file_part)
-        .text("model", "whisper-1");
+        .text("model", "whisper-1")
+        .text("language", "en");
 
     let response = client
         .post("https://api.openai.com/v1/audio/transcriptions")
