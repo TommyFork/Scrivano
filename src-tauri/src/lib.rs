@@ -209,7 +209,9 @@ fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bo
 
     // Reuse existing indicator window if it exists (avoids destroy/create race)
     if let Some(existing) = app.get_webview_window("indicator") {
-        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(pos_x, pos_y)));
+        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            pos_x, pos_y,
+        )));
         let _ = existing.show();
         let _ = app.emit("indicator-state", "recording");
         return (Some(existing), false);
@@ -252,12 +254,8 @@ async fn handle_recording_stop(
 ) {
     // Helper: check if a NEW recording is in progress (our indicator may have been reused).
     // When true, we must not modify the indicator or paste — the user is re-recording.
-    let new_recording_active = || -> bool {
-        app.state::<Mutex<AppState>>()
-            .lock()
-            .unwrap()
-            .is_recording
-    };
+    let new_recording_active =
+        || -> bool { app.state::<Mutex<AppState>>().lock().unwrap().is_recording };
 
     // Update indicator to processing state (only if no new recording started)
     if !new_recording_active() {

@@ -64,37 +64,35 @@ mod macos {
     /// Get the bundle identifier of the frontmost application via NSWorkspace.
     pub fn get_frontmost_bundle_id() -> Option<String> {
         unsafe {
-            let cls = objc_getClass(b"NSWorkspace\0".as_ptr() as *const _);
+            let cls = objc_getClass(c"NSWorkspace".as_ptr());
             if cls.is_null() {
                 return None;
             }
-            let workspace =
-                objc_msgSend(cls, sel_registerName(b"sharedWorkspace\0".as_ptr() as *const _));
+            let workspace = objc_msgSend(cls, sel_registerName(c"sharedWorkspace".as_ptr()));
             if workspace.is_null() {
                 return None;
             }
             let app = objc_msgSend(
                 workspace,
-                sel_registerName(b"frontmostApplication\0".as_ptr() as *const _),
+                sel_registerName(c"frontmostApplication".as_ptr()),
             );
             if app.is_null() {
                 return None;
             }
-            let ns_string = objc_msgSend(
-                app,
-                sel_registerName(b"bundleIdentifier\0".as_ptr() as *const _),
-            );
+            let ns_string = objc_msgSend(app, sel_registerName(c"bundleIdentifier".as_ptr()));
             if ns_string.is_null() {
                 return None;
             }
-            let c_str = objc_msgSend(
-                ns_string,
-                sel_registerName(b"UTF8String\0".as_ptr() as *const _),
-            ) as *const std::os::raw::c_char;
+            let c_str = objc_msgSend(ns_string, sel_registerName(c"UTF8String".as_ptr()))
+                as *const std::os::raw::c_char;
             if c_str.is_null() {
                 return None;
             }
-            Some(std::ffi::CStr::from_ptr(c_str).to_string_lossy().into_owned())
+            Some(
+                std::ffi::CStr::from_ptr(c_str)
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         }
     }
 

@@ -65,9 +65,16 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
 
     // Whisper hallucinates these strings on silence/short audio
     let hallucinations = [
-        "you", "thank you", "thank you.", "thanks for watching.",
-        "thanks for watching", "subscribe.", "bye.", "bye",
-        "okay.", "okay",
+        "you",
+        "thank you",
+        "thank you.",
+        "thanks for watching.",
+        "thanks for watching",
+        "subscribe.",
+        "bye.",
+        "bye",
+        "okay.",
+        "okay",
     ];
     if hallucinations.iter().any(|h| text.eq_ignore_ascii_case(h)) {
         return Err("No speech detected — hold the key longer and speak clearly".to_string());
