@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
+import React, { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import {
   createShortcutRecorder,
-  formatShortcutForDisplay,
   type ShortcutRecorder,
   type KeyboardEventLike,
 } from "./shortcutUtils";
@@ -35,19 +34,49 @@ interface TranscriptionSettings {
   model: string;
 }
 
+type SectionId = "model" | "shortcut" | "apikeys";
+
 const STATUS_DISPLAY_DURATION = 1500;
+const SETTINGS_HEIGHT = 520;
+const MAIN_HEIGHT = 340;
+
+function CollapsibleSection({
+  id,
+  title,
+  openSection,
+  onToggle,
+  children,
+}: {
+  id: SectionId;
+  title: string;
+  openSection: SectionId | null;
+  onToggle: (id: SectionId) => void;
+  children: React.ReactNode;
+}) {
+  const isOpen = openSection === id;
+  return (
+    <div className="collapsible-section">
+      <button className="section-header" onClick={() => onToggle(id)}>
+        <span className="section-title">{title}</span>
+        <span className={`section-chevron ${isOpen ? "open" : ""}`}>&#x25B8;</span>
+      </button>
+      {isOpen && <div className="section-body">{children}</div>}
+    </div>
+  );
+}
 
 function App() {
   const [text, setText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
-  const [status, setStatus] = useState("Awaiting thy voice");
+  const [status, setStatus] = useState("Ready");
   const [error, setError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
+  const showSettingsRef = useRef(false);
+  const [openSection, setOpenSection] = useState<SectionId | null>("model");
   const [currentShortcut, setCurrentShortcut] = useState<ShortcutInfo | null>(null);
-  const [pendingShortcut, setPendingShortcut] = useState<{ modifiers: string[]; key: string } | null>(null);
   const [shortcutError, setShortcutError] = useState("");
   const [isRecordingShortcutActive, setIsRecordingShortcutActive] = useState(false);
   const [liveDisplay, setLiveDisplay] = useState("");
@@ -68,6 +97,11 @@ function App() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings | null>(null);
 
+  // Keep ref in sync with state
+  useEffect(() => {
+    showSettingsRef.current = showSettings;
+  }, [showSettings]);
+
   useEffect(() => {
     invoke<string>("get_transcription").then((t) => {
       if (t) setText(t);
@@ -81,12 +115,12 @@ function App() {
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
         setIsRecording(e.payload);
-        setStatus(e.payload ? "Hearkening..." : "The quill doth write...");
+        setStatus(e.payload ? "Recording..." : "Transcribing...");
         if (e.payload) setError("");
       }),
       listen<string>("transcription", (e) => {
         setText(e.payload);
-        setStatus("Awaiting thy voice");
+        setStatus("Ready");
       }),
       listen<string>("transcription-status", (e) => setStatus(e.payload)),
       listen<string>("error", (e) => {
@@ -95,11 +129,23 @@ function App() {
       }),
     ];
 
-    // Auto-focus textarea when window gains focus
+    // Auto-focus textarea when window gains focus, reset settings on blur
     const currentWindow = getCurrentWindow();
     const focusUnlisten = currentWindow.onFocusChanged(({ payload: focused }) => {
-      if (focused && textareaRef.current) {
-        textareaRef.current.focus();
+      if (focused) {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      } else if (showSettingsRef.current) {
+        // Window lost focus while settings open: discard and reset
+        setShowSettings(false);
+        setShortcutError("");
+        setIsRecordingShortcutActive(false);
+        setLiveDisplay("");
+        setEditingProvider(null);
+        setOpenaiKeyInput("");
+        setGroqKeyInput("");
+        invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
       }
     });
 
@@ -123,54 +169,103 @@ function App() {
       if (isEscape) {
         event.preventDefault();
         event.stopPropagation();
+
+        if (isRecordingShortcutActive) {
+          // Cancel shortcut recording on Escape
+          cancelRecordingShortcut();
+          return;
+        }
+
+        if (showSettingsRef.current) {
+          closeSettings();
+          return;
+        }
+
         invoke("hide_window");
       }
     };
 
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecordingShortcutActive]);
+
+  const openSettings = useCallback(() => {
+    setShowSettings(true);
+    setOpenSection("model");
+    invoke("resize_window", { height: SETTINGS_HEIGHT }).catch(() => {});
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setShortcutError("");
+    setIsRecordingShortcutActive(false);
+    setLiveDisplay("");
+    setEditingProvider(null);
+    setOpenaiKeyInput("");
+    setGroqKeyInput("");
+    invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
   }, []);
 
   const handleCopy = async () => {
     try {
       await invoke("copy_to_clipboard", { text });
       setError("");
-      setStatus("'Tis copied!");
-      setTimeout(() => setStatus("Awaiting thy voice"), STATUS_DISPLAY_DURATION);
+      setStatus("Copied!");
+      setTimeout(() => setStatus("Ready"), STATUS_DISPLAY_DURATION);
     } catch (e) {
       setError(String(e));
     }
   };
 
-  // Sync recorder state to React state
+  const handleSectionToggle = useCallback((id: SectionId) => {
+    setOpenSection((prev) => (prev === id ? null : id));
+  }, []);
+
+  // ── Shortcut recording (simplified: click box → press keys → release auto-saves) ──
+
   const syncRecorderState = useCallback(() => {
     const recorder = recorderRef.current;
     const state = recorder.state;
 
     if (state.type === "complete") {
-      setPendingShortcut(state.shortcut);
-      setShortcutError("");
-      setIsRecordingShortcutActive(false);
+      // Auto-save on completion
+      const shortcut = state.shortcut;
       setLiveDisplay("");
+      setIsRecordingShortcutActive(false);
       recorder.cancel(); // Reset to idle
+
+      invoke<ShortcutInfo>("set_shortcut", {
+        modifiers: shortcut.modifiers,
+        key: shortcut.key,
+      })
+        .then((result) => {
+          setCurrentShortcut(result);
+          setShortcutError("");
+          setError("");
+        })
+        .catch((e) => {
+          const message = String(e);
+          const friendlyMessage = message.toLowerCase().includes("failed to register shortcut")
+            ? "That shortcut is reserved by the system. Try another."
+            : message;
+          setShortcutError(friendlyMessage);
+        });
     } else if (state.type === "error") {
       setShortcutError(state.message);
-      setPendingShortcut(null);
       setIsRecordingShortcutActive(false);
       setLiveDisplay("");
-      recorder.cancel(); // Reset to idle
+      recorder.cancel();
     } else if (state.type === "recording") {
       setLiveDisplay(recorder.getDisplay());
     }
   }, []);
 
-  // Key down handler
   const handleShortcutKeyDown = useCallback((e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!isRecordingShortcutActive) {
-      setPendingShortcut(null);
       setShortcutError("");
       setLiveDisplay("");
       recorderRef.current.start();
@@ -190,7 +285,6 @@ function App() {
     syncRecorderState();
   }, [isRecordingShortcutActive, syncRecorderState]);
 
-  // Key up handler
   const handleShortcutKeyUp = useCallback((e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -210,17 +304,8 @@ function App() {
     syncRecorderState();
   }, [isRecordingShortcutActive, syncRecorderState]);
 
-  const startRecordingShortcut = useCallback(() => {
-    setPendingShortcut(null);
-    setShortcutError("");
-    setLiveDisplay("");
-    recorderRef.current.start();
-    setIsRecordingShortcutActive(true);
-  }, []);
-
   const cancelRecordingShortcut = useCallback(() => {
     recorderRef.current.cancel();
-    setPendingShortcut(null);
     setShortcutError("");
     setLiveDisplay("");
     setIsRecordingShortcutActive(false);
@@ -232,32 +317,8 @@ function App() {
     }
   }, [isRecordingShortcutActive, cancelRecordingShortcut]);
 
-  const saveShortcut = async () => {
-    if (!pendingShortcut || shortcutError) return;
+  // ── API Key handlers ──
 
-    try {
-      const result = await invoke<ShortcutInfo>("set_shortcut", {
-        modifiers: pendingShortcut.modifiers,
-        key: pendingShortcut.key,
-      });
-      setCurrentShortcut(result);
-      setPendingShortcut(null);
-      setShortcutError("");
-      setError("");
-    } catch (e) {
-      const message = String(e);
-      const friendlyMessage = message.toLowerCase().includes("failed to register shortcut")
-        ? "That shortcut is reserved by the system and cannot be registered. Try another."
-        : message;
-      setShortcutError(friendlyMessage);
-    }
-  };
-
-  const formatPendingShortcut = (shortcut: { modifiers: string[]; key: string }): string => {
-    return formatShortcutForDisplay(shortcut.modifiers, shortcut.key);
-  };
-
-  // API Key handlers
   const handleSaveApiKey = async (provider: "openai" | "groq") => {
     setApiKeySaving(true);
     try {
@@ -268,12 +329,10 @@ function App() {
       });
       setApiKeyStatus(result);
 
-      // Clear input and exit edit mode
       if (provider === "openai") setOpenaiKeyInput("");
       else setGroqKeyInput("");
       setEditingProvider(null);
 
-      // Refresh providers list
       const updatedProviders = await invoke<ProviderInfo[]>("get_available_providers");
       setProviders(updatedProviders);
 
@@ -293,11 +352,9 @@ function App() {
       });
       setApiKeyStatus(result);
 
-      // Refresh providers list
       const updatedProviders = await invoke<ProviderInfo[]>("get_available_providers");
       setProviders(updatedProviders);
 
-      // If the cleared provider was selected, switch to another if available
       if (transcriptionSettings?.provider === provider) {
         const otherProvider = updatedProviders.find(p => p.available && p.id !== provider);
         if (otherProvider) {
@@ -326,29 +383,112 @@ function App() {
 
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SETTINGS VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+
   if (showSettings) {
     return (
       <div className="container">
         <div className="header">
+          <button className="back-btn" onClick={closeSettings} title="Return">
+            &#x2190;
+          </button>
           <span className="status-text">Configuration</span>
         </div>
 
         {error && <div className="error">{error}</div>}
 
+        {/* Warning banner always visible above sections */}
+        {apiKeyStatus && !hasAnyApiKey && (
+          <div className="warning settings-warning">
+            No API keys configured. Transcription will not function.
+          </div>
+        )}
+
         <div className="content settings-content">
-          {/* API Keys Section */}
-          <div className="settings-section">
-            <label className="settings-label">API Keys</label>
+          {/* ── Model Section ── */}
+          <CollapsibleSection
+            id="model"
+            title="Transcription Model"
+            openSection={openSection}
+            onToggle={handleSectionToggle}
+          >
+            <p className="settings-description">Select a transcription provider</p>
+            <div className="model-selector">
+              {providers.map((provider) => (
+                <button
+                  key={provider.id}
+                  className={`model-option ${
+                    transcriptionSettings?.provider === provider.id ? "selected" : ""
+                  } ${!provider.available ? "disabled" : ""}`}
+                  onClick={() => provider.available && handleProviderChange(provider.id)}
+                  disabled={!provider.available}
+                  title={!provider.available ? "API key not configured" : undefined}
+                >
+                  <span className="model-name">{provider.name}</span>
+                  <span className="model-id">{provider.model}</span>
+                  {!provider.available && <span className="model-unavailable">No key</span>}
+                </button>
+              ))}
+            </div>
+          </CollapsibleSection>
+
+          {/* ── Shortcut Section ── */}
+          <CollapsibleSection
+            id="shortcut"
+            title="Recording Shortcut"
+            openSection={openSection}
+            onToggle={handleSectionToggle}
+          >
             <p className="settings-description">
-              Configure thy transcription services
+              Press and hold to record.
             </p>
 
-            {/* Warning if no keys configured - shown above keys */}
-            {apiKeyStatus && !hasAnyApiKey && (
-              <div className="warning">
-                No API keys configured. Transcription will not function.
+            {shortcutError && (
+              <div className="shortcut-error-box">
+                <span className="shortcut-error-icon">&#x26A0;</span>
+                <span>{shortcutError}</span>
               </div>
             )}
+
+            <div
+              className={`shortcut-display shortcut-clickable ${isRecordingShortcutActive ? "shortcut-display-recording" : ""} ${shortcutError ? "shortcut-display-error" : ""}`}
+              tabIndex={0}
+              onKeyDown={handleShortcutKeyDown}
+              onKeyUp={handleShortcutKeyUp}
+              onBlur={handleShortcutBlur}
+              onClick={(e) => {
+                if (!isRecordingShortcutActive) {
+                  setShortcutError("");
+                  setLiveDisplay("");
+                  recorderRef.current.start();
+                  setIsRecordingShortcutActive(true);
+                  (e.currentTarget as HTMLElement).focus();
+                }
+              }}
+            >
+              {isRecordingShortcutActive ? (
+                <span className="shortcut-recording-text">
+                  {liveDisplay || "Press keys..."}
+                </span>
+              ) : (
+                <>
+                  <span className="shortcut-current">{currentShortcut?.display || "\u2318\u21E7Space"}</span>
+                  <span className="shortcut-change-hint">Click to change</span>
+                </>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          {/* ── API Keys Section ── */}
+          <CollapsibleSection
+            id="apikeys"
+            title="API Keys"
+            openSection={openSection}
+            onToggle={handleSectionToggle}
+          >
+            <p className="settings-description">Manage your API keys</p>
 
             {/* OpenAI Key */}
             <div className="api-key-row">
@@ -362,7 +502,7 @@ function App() {
               </div>
               {apiKeyStatus?.openai_configured && editingProvider !== "openai" ? (
                 <div className="api-key-input-row">
-                  <div className="api-key-display">••••••••••••••••</div>
+                  <div className="api-key-display">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
                   <button
                     className="btn small"
                     onClick={() => { setOpenaiKeyInput(""); setEditingProvider("openai"); }}
@@ -376,7 +516,7 @@ function App() {
                       disabled={apiKeySaving}
                       title="Remove key"
                     >
-                      ×
+                      &#xD7;
                     </button>
                   )}
                 </div>
@@ -395,7 +535,7 @@ function App() {
                       <button
                         className="api-key-eye"
                         onClick={() => setShowOpenaiKey(!showOpenaiKey)}
-                        title={showOpenaiKey ? "Conceal" : "Reveal"}
+                        title={showOpenaiKey ? "Hide" : "Show"}
                         tabIndex={-1}
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -437,7 +577,7 @@ function App() {
               </div>
               {apiKeyStatus?.groq_configured && editingProvider !== "groq" ? (
                 <div className="api-key-input-row">
-                  <div className="api-key-display">••••••••••••••••</div>
+                  <div className="api-key-display">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
                   <button
                     className="btn small"
                     onClick={() => { setGroqKeyInput(""); setEditingProvider("groq"); }}
@@ -451,7 +591,7 @@ function App() {
                       disabled={apiKeySaving}
                       title="Remove key"
                     >
-                      ×
+                      &#xD7;
                     </button>
                   )}
                 </div>
@@ -470,7 +610,7 @@ function App() {
                       <button
                         className="api-key-eye"
                         onClick={() => setShowGroqKey(!showGroqKey)}
-                        title={showGroqKey ? "Conceal" : "Reveal"}
+                        title={showGroqKey ? "Hide" : "Show"}
                         tabIndex={-1}
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -499,123 +639,36 @@ function App() {
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Transcription Model Section */}
-          <div className="settings-section">
-            <label className="settings-label">Transcription Model</label>
-            <p className="settings-description">
-              Choose thy oracle of speech
-            </p>
-
-            <div className="model-selector">
-              {providers.map((provider) => (
-                <button
-                  key={provider.id}
-                  className={`model-option ${
-                    transcriptionSettings?.provider === provider.id ? "selected" : ""
-                  } ${!provider.available ? "disabled" : ""}`}
-                  onClick={() => provider.available && handleProviderChange(provider.id)}
-                  disabled={!provider.available}
-                  title={!provider.available ? "API key not configured" : undefined}
-                >
-                  <span className="model-name">{provider.name}</span>
-                  <span className="model-id">{provider.model}</span>
-                  {!provider.available && <span className="model-unavailable">No key</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Shortcut Section */}
-          <div className="settings-section">
-            <label className="settings-label">Recording Shortcut</label>
-            <p className="settings-description">
-              Press and hold this key combination to record thy voice.
-            </p>
-
-            {shortcutError && (
-              <div className="shortcut-error-box">
-                <span className="shortcut-error-icon">⚠</span>
-                <span>{shortcutError}</span>
-              </div>
-            )}
-
-            <div className={`shortcut-display ${isRecordingShortcutActive ? "shortcut-display-recording" : ""} ${shortcutError ? "shortcut-display-error" : ""}`}>
-              {isRecordingShortcutActive || pendingShortcut ? (
-                <input
-                  type="text"
-                  className="shortcut-input"
-                  placeholder="Press thy keys..."
-                  value={isRecordingShortcutActive ? liveDisplay : pendingShortcut ? formatPendingShortcut(pendingShortcut) : ""}
-                  onKeyDown={handleShortcutKeyDown}
-                  onKeyUp={handleShortcutKeyUp}
-                  onBlur={handleShortcutBlur}
-                  autoFocus
-                  readOnly
-                />
-              ) : (
-                <span className="shortcut-current">{currentShortcut?.display || "⌘⇧Space"}</span>
-              )}
-            </div>
-
-            <div className="shortcut-actions">
-              {isRecordingShortcutActive ? (
-                <button onClick={cancelRecordingShortcut} className="btn">
-                  Cease
-                </button>
-              ) : pendingShortcut ? (
-                <>
-                  <button onClick={saveShortcut} className="btn primary">
-                    Inscribe
-                  </button>
-                  <button onClick={cancelRecordingShortcut} className="btn">
-                    Discard
-                  </button>
-                </>
-              ) : shortcutError ? (
-                <button onClick={startRecordingShortcut} className="btn">
-                  Try Again
-                </button>
-              ) : (
-                <button onClick={startRecordingShortcut} className="btn">
-                  Change
-                </button>
-              )}
-            </div>
-          </div>
+          </CollapsibleSection>
         </div>
 
-        <div className="actions">
-          <button onClick={() => { setShowSettings(false); setShortcutError(""); setPendingShortcut(null); }} className="btn primary">
-            Return
-          </button>
-        </div>
-
-        <div className="hint">Configure thy scribe's instruments</div>
+        <div className="hint">Settings</div>
       </div>
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MAIN VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+
   return (
-    <div className="container" tabIndex={0} ref={(el) => el?.focus()}>
+    <div className="container">
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>
-        <button className="settings-btn" onClick={() => setShowSettings(true)} title="Settings">
-          ⚙
+        <button className="settings-btn" onClick={openSettings} title="Settings">
+          &#x2699;
         </button>
       </div>
 
       {error && <div className="error">{error}</div>}
 
-      {/* Show setup required if no API keys */}
       {apiKeyStatus && !hasAnyApiKey ? (
         <div className="content">
           <div className="setup-required">
-            <p>The scribe requires configuration.</p>
-            <p className="setup-hint">Please add an API key to begin transcription.</p>
-            <button className="btn primary" onClick={() => setShowSettings(true)}>
+            <p>No API key configured.</p>
+            <p className="setup-hint">Add an API key to start transcribing.</p>
+            <button className="btn primary" onClick={openSettings}>
               Open Settings
             </button>
           </div>
@@ -628,22 +681,21 @@ function App() {
               className="edit-area"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={`Speak unto the aether with ${currentShortcut?.display || "⌘⇧Space"}`}
+              placeholder={`Press ${currentShortcut?.display || "\u2318\u21E7Space"} to record`}
               aria-label="Transcription text"
               spellCheck={false}
             />
           </div>
 
           <div className="actions">
-            <button onClick={handleCopy} className="btn" disabled={!text}>Duplicate</button>
+            <button onClick={handleCopy} className="btn" disabled={!text}>Copy</button>
           </div>
 
-          <div className="hint">
-            {transcriptionSettings && (
-              <span className="current-model">{transcriptionSettings.model}</span>
-            )}
-            {" "}Summon the scribe: {currentShortcut?.display || "⌘⇧Space"}
-          </div>
+          {transcriptionSettings && (
+            <div className="hint">
+              <button className="current-model" onClick={openSettings}>{transcriptionSettings.model}</button>
+            </div>
+          )}
         </>
       )}
     </div>

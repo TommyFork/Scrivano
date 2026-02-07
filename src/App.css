@@ -83,20 +83,22 @@
 .container::after {
   content: '❧';
   position: absolute;
-  font-size: 24px;
+  font-size: 20px;
   color: var(--ink-faded);
-  opacity: 0.6;
+  opacity: 0.3;
   font-family: 'MedievalSharp', serif;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .container::before {
-  top: 6px;
-  left: 10px;
+  top: 4px;
+  right: 10px;
 }
 
 .container::after {
-  bottom: 6px;
-  right: 10px;
+  bottom: 4px;
+  left: 10px;
   transform: rotate(180deg);
 }
 
@@ -108,10 +110,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  height: 40px;
+  flex-shrink: 0;
   padding-bottom: 14px;
   margin-bottom: 2px;
   border-bottom: 1px solid var(--ink-faded);
   position: relative;
+  z-index: 1;
 }
 
 /* Decorative line flourish */
@@ -216,27 +221,8 @@
 .content {
   flex: 1;
   margin-top: 16px;
-  overflow-y: auto;
-  padding-right: 8px;
-
-  /* Custom scrollbar - aged brass */
-  scrollbar-width: thin;
-  scrollbar-color: var(--ink-faded) var(--parchment-dark);
-}
-
-.content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.content::-webkit-scrollbar-track {
-  background: var(--parchment-dark);
-  border-radius: 4px;
-}
-
-.content::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--ink-faded), var(--ink-brown));
-  border-radius: 4px;
-  border: 1px solid var(--parchment-dark);
+  overflow: hidden;
+  min-height: 0;
 }
 
 .transcription {
@@ -306,6 +292,27 @@
   font-style: italic;
 }
 
+/* Custom scrollbar for edit area - aged brass */
+.edit-area {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-faded) var(--parchment-dark);
+}
+
+.edit-area::-webkit-scrollbar {
+  width: 8px;
+}
+
+.edit-area::-webkit-scrollbar-track {
+  background: var(--parchment-dark);
+  border-radius: 4px;
+}
+
+.edit-area::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--ink-faded), var(--ink-brown));
+  border-radius: 4px;
+  border: 1px solid var(--parchment-dark);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    ACTIONS - WAX SEAL BUTTONS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -313,23 +320,7 @@
 .actions {
   display: flex;
   gap: 12px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--ink-faded);
-  position: relative;
-}
-
-/* Decorative separator */
-.actions::before {
-  content: '✦';
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 10px;
-  color: var(--gold);
-  background: var(--parchment);
-  padding: 0 8px;
+  margin-top: 10px;
 }
 
 .btn {
@@ -420,18 +411,13 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .hint {
-  margin-top: 14px;
+  margin-top: 8px;
   font-family: 'Cormorant Garamond', serif;
   font-size: 12px;
   font-style: italic;
   color: var(--ink-faded);
   text-align: center;
   letter-spacing: 0.5px;
-}
-
-.hint::before {
-  content: '☞ ';
-  font-style: normal;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -507,14 +493,16 @@
 
   .container::before,
   .container::after {
-    opacity: 0.4;
+    opacity: 0.2;
   }
 
-  .content::-webkit-scrollbar-track {
+  .settings-content::-webkit-scrollbar-track,
+  .edit-area::-webkit-scrollbar-track {
     background: var(--parchment-dark);
   }
 
-  .content::-webkit-scrollbar-thumb {
+  .settings-content::-webkit-scrollbar-thumb,
+  .edit-area::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, var(--ink-faded), var(--ink-brown));
     border-color: var(--parchment-dark);
   }
@@ -543,6 +531,7 @@
   background: none;
   border: none;
   font-size: 16px;
+  line-height: 1;
   color: var(--ink-faded);
   cursor: pointer;
   padding: 4px 8px;
@@ -568,22 +557,28 @@
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 8px;
+
+  /* Custom scrollbar - aged brass */
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-faded) var(--parchment-dark);
 }
 
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.settings-content::-webkit-scrollbar {
+  width: 8px;
 }
 
-.settings-label {
-  font-family: 'Cinzel', 'Trajan Pro', serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-sepia);
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
+.settings-content::-webkit-scrollbar-track {
+  background: var(--parchment-dark);
+  border-radius: 4px;
+}
+
+.settings-content::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--ink-faded), var(--ink-brown));
+  border-radius: 4px;
+  border: 1px solid var(--parchment-dark);
 }
 
 .settings-description {
@@ -591,13 +586,90 @@
   font-size: 13px;
   font-style: italic;
   color: var(--ink-faded);
-  margin: 0;
+  margin: 0 0 4px 0;
 }
 
-.settings-hint {
-  font-size: 11px;
+.settings-warning {
+  margin-top: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BACK BUTTON
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.back-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
   color: var(--ink-faded);
-  opacity: 0.8;
+  cursor: pointer;
+  width: 14px;
+  padding: 0;
+  text-align: center;
+  transition: color 0.2s ease;
+  line-height: 1;
+}
+
+.back-btn:hover {
+  color: var(--ink-sepia);
+}
+
+.back-btn:active {
+  transform: translateX(-1px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COLLAPSIBLE ACCORDION SECTIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.collapsible-section {
+  border: 1px solid var(--ink-faded);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.section-header:hover {
+  background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+}
+
+.section-title {
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-sepia);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.section-chevron {
+  font-size: 14px;
+  color: var(--ink-faded);
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.section-chevron.open {
+  transform: rotate(90deg);
+}
+
+.section-body {
+  padding: 12px 14px;
+  border-top: 1px solid var(--ink-faded);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -619,8 +691,7 @@
     0 2px 4px rgba(44, 24, 16, 0.1);
 }
 
-.shortcut-current,
-.shortcut-pending {
+.shortcut-current {
   font-family: 'Cinzel', 'Trajan Pro', serif;
   font-size: 22px;
   font-weight: 600;
@@ -628,15 +699,32 @@
   letter-spacing: 2px;
 }
 
-.shortcut-pending {
-  color: var(--gold-dark);
+.shortcut-clickable {
+  cursor: pointer;
+  position: relative;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.shortcut-recording {
+.shortcut-clickable:hover:not(.shortcut-display-recording) {
+  border-color: var(--gold-dark);
+}
+
+.shortcut-change-hint {
   font-family: 'Cormorant Garamond', serif;
-  font-size: 16px;
+  font-size: 11px;
   font-style: italic;
+  color: var(--ink-faded);
+}
+
+.shortcut-recording-text {
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--wax-red);
+  letter-spacing: 1px;
+  white-space: nowrap;
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -651,30 +739,6 @@
 
 .shortcut-display:focus {
   outline: none;
-}
-
-.shortcut-input {
-  width: 100%;
-  border: none;
-  background: transparent;
-  font-family: 'Cinzel', 'Trajan Pro', serif;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--wax-red);
-  text-align: center;
-  outline: none;
-  caret-color: transparent;
-  letter-spacing: 2px;
-}
-
-.shortcut-input::placeholder {
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 16px;
-  font-weight: 400;
-  font-style: italic;
-  color: var(--wax-red);
-  opacity: 0.7;
-  letter-spacing: normal;
 }
 
 @keyframes pulse {
@@ -714,17 +778,6 @@
   opacity: 0.6;
 }
 
-.shortcut-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-.shortcut-actions .btn {
-  flex: none;
-  min-width: 100px;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
    DARK MODE - SETTINGS ADJUSTMENTS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -737,6 +790,30 @@
   .settings-btn:hover {
     color: var(--ink-sepia);
     background: rgba(200, 180, 150, 0.1);
+  }
+
+  .back-btn {
+    color: var(--ink-faded);
+  }
+
+  .back-btn:hover {
+    color: var(--ink-sepia);
+  }
+
+  .collapsible-section {
+    border-color: var(--ink-faded);
+  }
+
+  .section-header {
+    background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  }
+
+  .section-header:hover {
+    background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  }
+
+  .section-body {
+    border-top-color: var(--ink-faded);
   }
 
   .shortcut-display {
@@ -1007,8 +1084,15 @@
   letter-spacing: 0.5px;
   background: rgba(92, 64, 51, 0.1);
   padding: 2px 6px;
+  border: none;
   border-radius: 2px;
-  margin-right: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.current-model:hover {
+  color: var(--ink-sepia);
+  background: rgba(92, 64, 51, 0.2);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

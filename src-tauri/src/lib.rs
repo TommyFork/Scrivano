@@ -90,6 +90,32 @@ fn hide_window(window: tauri::Window) {
     let _ = window.hide();
 }
 
+#[tauri::command]
+fn resize_window(app: AppHandle, height: f64) {
+    if let Some(window) = app.get_webview_window("main") {
+        let width = 320.0;
+        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
+
+        // Clamp position to screen bounds after resize
+        #[cfg(target_os = "macos")]
+        {
+            use core_graphics::display::CGDisplay;
+            if let Ok(pos) = window.outer_position() {
+                let bounds = CGDisplay::main().bounds();
+                let screen_w = bounds.size.width as i32;
+                let screen_h = bounds.size.height as i32;
+                let width_i32 = (width as i32).max(0);
+                let height_i32 = (height as i32).max(0);
+                let x = pos.x.max(0).min(screen_w.saturating_sub(width_i32));
+                let y = pos.y.max(0).min(screen_h.saturating_sub(height_i32));
+                let _ = window.set_position(tauri::Position::Physical(
+                    tauri::PhysicalPosition::new(x, y),
+                ));
+            }
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct ShortcutInfo {
     modifiers: Vec<String>,
@@ -614,7 +640,12 @@ pub fn run() {
                         match event.state() {
                             ShortcutState::Pressed => {
                                 // Save the frontmost app for later focus restoration.
-                                let original_app = cursor::get_frontmost_bundle_id();
+                                // Filter out our own bundle ID — when running as a .app,
+                                // the global shortcut can briefly activate Scrivano, and
+                                // trying to send AppleScript to ourselves deadlocks.
+                                let own_bundle_id = "com.tommyross.scrivano";
+                                let original_app = cursor::get_frontmost_bundle_id()
+                                    .filter(|id| id != own_bundle_id);
 
                                 match audio::start_recording() {
                                     Ok(handle) => {
@@ -758,6 +789,7 @@ pub fn run() {
             copy_to_clipboard,
             paste_text,
             hide_window,
+            resize_window,
             get_shortcut,
             set_shortcut,
             get_api_key_status,
