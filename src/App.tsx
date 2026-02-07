@@ -95,7 +95,9 @@ function App() {
 
   // Provider/Model state
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings | null>(null);
+  const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings | null>(
+    null,
+  );
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -261,48 +263,54 @@ function App() {
     }
   }, []);
 
-  const handleShortcutKeyDown = useCallback((e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleShortcutKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!isRecordingShortcutActive) {
-      setShortcutError("");
-      setLiveDisplay("");
-      recorderRef.current.start();
-      setIsRecordingShortcutActive(true);
-    }
+      if (!isRecordingShortcutActive) {
+        setShortcutError("");
+        setLiveDisplay("");
+        recorderRef.current.start();
+        setIsRecordingShortcutActive(true);
+      }
 
-    const keyEvent: KeyboardEventLike = {
-      code: e.code,
-      key: e.key,
-      metaKey: e.metaKey,
-      ctrlKey: e.ctrlKey,
-      altKey: e.altKey,
-      shiftKey: e.shiftKey,
-    };
+      const keyEvent: KeyboardEventLike = {
+        code: e.code,
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+      };
 
-    recorderRef.current.handleKeyDown(keyEvent);
-    syncRecorderState();
-  }, [isRecordingShortcutActive, syncRecorderState]);
+      recorderRef.current.handleKeyDown(keyEvent);
+      syncRecorderState();
+    },
+    [isRecordingShortcutActive, syncRecorderState],
+  );
 
-  const handleShortcutKeyUp = useCallback((e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleShortcutKeyUp = useCallback(
+    (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!isRecordingShortcutActive) return;
+      if (!isRecordingShortcutActive) return;
 
-    const keyEvent: KeyboardEventLike = {
-      code: e.code,
-      key: e.key,
-      metaKey: e.metaKey,
-      ctrlKey: e.ctrlKey,
-      altKey: e.altKey,
-      shiftKey: e.shiftKey,
-    };
+      const keyEvent: KeyboardEventLike = {
+        code: e.code,
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+      };
 
-    recorderRef.current.handleKeyUp(keyEvent);
-    syncRecorderState();
-  }, [isRecordingShortcutActive, syncRecorderState]);
+      recorderRef.current.handleKeyUp(keyEvent);
+      syncRecorderState();
+    },
+    [isRecordingShortcutActive, syncRecorderState],
+  );
 
   const cancelRecordingShortcut = useCallback(() => {
     recorderRef.current.cancel();
@@ -356,7 +364,7 @@ function App() {
       setProviders(updatedProviders);
 
       if (transcriptionSettings?.provider === provider) {
-        const otherProvider = updatedProviders.find(p => p.available && p.id !== provider);
+        const otherProvider = updatedProviders.find((p) => p.available && p.id !== provider);
         if (otherProvider) {
           await handleProviderChange(otherProvider.id);
         }
@@ -441,9 +449,7 @@ function App() {
             openSection={openSection}
             onToggle={handleSectionToggle}
           >
-            <p className="settings-description">
-              Press and hold to record.
-            </p>
+            <p className="settings-description">Press and hold to record.</p>
 
             {shortcutError && (
               <div className="shortcut-error-box">
@@ -469,12 +475,12 @@ function App() {
               }}
             >
               {isRecordingShortcutActive ? (
-                <span className="shortcut-recording-text">
-                  {liveDisplay || "Press keys..."}
-                </span>
+                <span className="shortcut-recording-text">{liveDisplay || "Press keys..."}</span>
               ) : (
                 <>
-                  <span className="shortcut-current">{currentShortcut?.display || "\u2318\u21E7Space"}</span>
+                  <span className="shortcut-current">
+                    {currentShortcut?.display || "\u2318\u21E7Space"}
+                  </span>
                   <span className="shortcut-change-hint">Click to change</span>
                 </>
               )}
@@ -502,10 +508,15 @@ function App() {
               </div>
               {apiKeyStatus?.openai_configured && editingProvider !== "openai" ? (
                 <div className="api-key-input-row">
-                  <div className="api-key-display">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
+                  <div className="api-key-display">
+                    &#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;
+                  </div>
                   <button
                     className="btn small"
-                    onClick={() => { setOpenaiKeyInput(""); setEditingProvider("openai"); }}
+                    onClick={() => {
+                      setOpenaiKeyInput("");
+                      setEditingProvider("openai");
+                    }}
                   >
                     Edit
                   </button>
@@ -538,7 +549,12 @@ function App() {
                         title={showOpenaiKey ? "Hide" : "Show"}
                         tabIndex={-1}
                       >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                           <circle cx="12" cy="12" r="3" />
                           {showOpenaiKey && <line x1="1" y1="1" x2="23" y2="23" />}
@@ -556,7 +572,10 @@ function App() {
                   {editingProvider === "openai" && (
                     <button
                       className="btn small"
-                      onClick={() => { setOpenaiKeyInput(""); setEditingProvider(null); }}
+                      onClick={() => {
+                        setOpenaiKeyInput("");
+                        setEditingProvider(null);
+                      }}
                     >
                       Cancel
                     </button>
@@ -577,10 +596,15 @@ function App() {
               </div>
               {apiKeyStatus?.groq_configured && editingProvider !== "groq" ? (
                 <div className="api-key-input-row">
-                  <div className="api-key-display">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
+                  <div className="api-key-display">
+                    &#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;
+                  </div>
                   <button
                     className="btn small"
-                    onClick={() => { setGroqKeyInput(""); setEditingProvider("groq"); }}
+                    onClick={() => {
+                      setGroqKeyInput("");
+                      setEditingProvider("groq");
+                    }}
                   >
                     Edit
                   </button>
@@ -613,7 +637,12 @@ function App() {
                         title={showGroqKey ? "Hide" : "Show"}
                         tabIndex={-1}
                       >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                           <circle cx="12" cy="12" r="3" />
                           {showGroqKey && <line x1="1" y1="1" x2="23" y2="23" />}
@@ -631,7 +660,10 @@ function App() {
                   {editingProvider === "groq" && (
                     <button
                       className="btn small"
-                      onClick={() => { setGroqKeyInput(""); setEditingProvider(null); }}
+                      onClick={() => {
+                        setGroqKeyInput("");
+                        setEditingProvider(null);
+                      }}
                     >
                       Cancel
                     </button>
@@ -688,12 +720,16 @@ function App() {
           </div>
 
           <div className="actions">
-            <button onClick={handleCopy} className="btn" disabled={!text}>Copy</button>
+            <button onClick={handleCopy} className="btn" disabled={!text}>
+              Copy
+            </button>
           </div>
 
           {transcriptionSettings && (
             <div className="hint">
-              <button className="current-model" onClick={openSettings}>{transcriptionSettings.model}</button>
+              <button className="current-model" onClick={openSettings}>
+                {transcriptionSettings.model}
+              </button>
             </div>
           )}
         </>
