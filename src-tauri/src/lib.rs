@@ -188,8 +188,8 @@ fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bo
     let (mx, my) = cursor::get_mouse_position().unwrap_or((100, 100));
 
     // Place above-right of mouse cursor
-    let mut pos_x = mx + 8;
-    let mut pos_y = if my - height - 12 >= 4 {
+    let pos_x = mx + 8;
+    let pos_y = if my - height - 12 >= 4 {
         my - height - 12
     } else {
         my + 4
@@ -197,15 +197,17 @@ fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bo
 
     // Clamp to screen bounds
     #[cfg(target_os = "macos")]
-    {
+    let (pos_x, pos_y) = {
         use core_graphics::display::CGDisplay;
         let bounds = CGDisplay::main().bounds();
         let screen_w = bounds.size.width as i32;
         let screen_h = bounds.size.height as i32;
 
-        pos_x = pos_x.max(4).min(screen_w - width - 4);
-        pos_y = pos_y.max(4).min(screen_h - height - 4);
-    }
+        (
+            pos_x.max(4).min(screen_w - width - 4),
+            pos_y.max(4).min(screen_h - height - 4),
+        )
+    };
 
     // Reuse existing indicator window if it exists (avoids destroy/create race)
     if let Some(existing) = app.get_webview_window("indicator") {
