@@ -7,6 +7,8 @@
 
 A macOS voice-to-text tray app built with Tauri 2.x. Press and hold a global hotkey to record audio, which is then transcribed via Whisper and automatically pasted at your cursor position.
 
+![Scrivano](https://github.com/user-attachments/assets/33d38cd3-5502-4b29-9005-59c14f79c1d6)
+
 ## Features
 
 - **Tray app**: Runs in the macOS menu bar, no dock icon
