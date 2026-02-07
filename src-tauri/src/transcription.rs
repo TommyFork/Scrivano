@@ -63,7 +63,8 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
 
     let text = whisper_response.text.trim().to_string();
 
-    // Whisper hallucinates these strings on silence/short audio
+    // Whisper hallucinates these strings on silence/short audio.
+    // Only include phrases that are almost never intentional single-utterance transcriptions.
     let hallucinations = [
         "you",
         "thank you",
@@ -71,12 +72,12 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
         "thanks for watching.",
         "thanks for watching",
         "subscribe.",
-        "bye.",
-        "bye",
-        "okay.",
-        "okay",
     ];
     if hallucinations.iter().any(|h| text.eq_ignore_ascii_case(h)) {
+        eprintln!(
+            "[Scrivano] Filtered likely Whisper hallucination: {:?}",
+            text
+        );
         return Err("No speech detected — hold the key longer and speak clearly".to_string());
     }
 

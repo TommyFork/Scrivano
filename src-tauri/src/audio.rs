@@ -77,6 +77,22 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
 
     let err_fn = |err| eprintln!("Audio stream error: {}", err);
 
+    /// Process mono samples: store for WAV output and track levels for the indicator.
+    fn process_mono_samples(
+        mono: f32,
+        samples: &mut Vec<f32>,
+        level_window: &mut Vec<f32>,
+        audio_levels: &Arc<Mutex<Vec<f32>>>,
+    ) {
+        samples.push(mono);
+        level_window.push(mono.abs());
+        // Update audio levels periodically (every ~512 mono samples)
+        if level_window.len() >= 512 {
+            update_audio_levels(level_window, audio_levels);
+            level_window.clear();
+        }
+    }
+
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
             let samples_clone = Arc::clone(&samples);
@@ -87,16 +103,9 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     let mut s = samples_clone.lock().unwrap();
                     let mut lw = level_window_clone.lock().unwrap();
-                    // Convert to mono if stereo
                     for chunk in data.chunks(channels as usize) {
                         let mono = chunk.iter().sum::<f32>() / chunk.len() as f32;
-                        s.push(mono);
-                        lw.push(mono.abs());
-                    }
-                    // Update audio levels periodically (every ~100 samples)
-                    if lw.len() >= 512 {
-                        update_audio_levels(&lw, &audio_levels_clone);
-                        lw.clear();
+                        process_mono_samples(mono, &mut s, &mut lw, &audio_levels_clone);
                     }
                 },
                 err_fn,
@@ -118,12 +127,7 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
                             .map(|&sample| sample as f32 / i16::MAX as f32)
                             .sum::<f32>()
                             / chunk.len() as f32;
-                        s.push(mono);
-                        lw.push(mono.abs());
-                    }
-                    if lw.len() >= 512 {
-                        update_audio_levels(&lw, &audio_levels_clone);
-                        lw.clear();
+                        process_mono_samples(mono, &mut s, &mut lw, &audio_levels_clone);
                     }
                 },
                 err_fn,
@@ -145,12 +149,7 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
                             .map(|&sample| (sample as f32 - 32768.0) / 32768.0)
                             .sum::<f32>()
                             / chunk.len() as f32;
-                        s.push(mono);
-                        lw.push(mono.abs());
-                    }
-                    if lw.len() >= 512 {
-                        update_audio_levels(&lw, &audio_levels_clone);
-                        lw.clear();
+                        process_mono_samples(mono, &mut s, &mut lw, &audio_levels_clone);
                     }
                 },
                 err_fn,

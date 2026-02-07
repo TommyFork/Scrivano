@@ -28,6 +28,14 @@ pub fn activate_app(bundle_id: &str) -> Result<(), String> {
 
 /// Activate an application without waiting — use when restoring focus, not before pasting
 pub fn activate_app_fast(bundle_id: &str) -> Result<(), String> {
+    // Validate bundle_id to prevent AppleScript injection (should only contain [a-zA-Z0-9.-])
+    if !bundle_id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+    {
+        return Err(format!("Invalid bundle identifier: {}", bundle_id));
+    }
+
     let script = format!(r#"tell application id "{}" to activate"#, bundle_id);
 
     let output = Command::new("osascript")

@@ -243,7 +243,7 @@ fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bo
     }
 }
 
-fn hide_indicator_window(app: &AppHandle) {
+fn destroy_indicator_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("indicator") {
         let _ = window.destroy();
     }
@@ -271,7 +271,7 @@ async fn handle_recording_stop(
             eprintln!("API key error: {}", e);
             let _ = app.emit("error", e);
             if !new_recording_active() {
-                hide_indicator_window(&app);
+                destroy_indicator_window(&app);
             }
             return;
         }
@@ -295,7 +295,7 @@ async fn handle_recording_stop(
 
             // Only hide indicator and paste if no new recording started
             if !new_recording_active() {
-                hide_indicator_window(&app);
+                destroy_indicator_window(&app);
 
                 // Paste to the original app (this will re-activate it)
                 let paste_result = if let Some(ref bundle_id) = original_app {
@@ -316,7 +316,7 @@ async fn handle_recording_stop(
             eprintln!("Transcription failed: {}", e);
             let _ = app.emit("error", format!("Transcription failed: {}", e));
             if !new_recording_active() {
-                hide_indicator_window(&app);
+                destroy_indicator_window(&app);
             }
         }
     }
@@ -433,6 +433,9 @@ pub fn run() {
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, _shortcut_ref, event| {
                         // Handle any registered shortcut (we only register one for recording)
+                        //
+                        // Lock ordering: always acquire recorder_state before app_state
+                        // to prevent deadlocks. handle_recording_stop only locks app_state.
                         let recorder_state = app.state::<Mutex<RecorderState>>();
                         let app_state = app.state::<Mutex<AppState>>();
 
@@ -451,6 +454,7 @@ pub fn run() {
 
                                         // Create or reuse indicator window at mouse position.
                                         // If reused, listeners are already mounted (skip ready handshake).
+                                        // Window ref is unused — Tauri owns the window lifecycle internally.
                                         let (_indicator_window, is_new_window) = create_indicator_window(app);
 
                                         // Register the ready listener BEFORE the window can emit.
@@ -482,6 +486,11 @@ pub fn run() {
                                         // Start polling thread for audio levels.
                                         // Wait for the indicator window to signal it's ready
                                         // before emitting events, with a timeout fallback.
+                                        //
+                                        // NOTE: This thread is not joined — it exits when
+                                        // stop_flag is set (within ~50ms). Each recording gets
+                                        // a new Arc<AtomicBool>, so old threads always see
+                                        // their own flag go true and exit cleanly.
                                         let app_clone = app.clone();
 
                                         let app_for_unlisten = app.clone();
@@ -554,7 +563,7 @@ pub fn run() {
                                                 "error",
                                                 format!("Failed to stop recording: {}", e),
                                             );
-                                            hide_indicator_window(&app_clone);
+                                            destroy_indicator_window(&app_clone);
                                         }
                                     });
                                 }
