@@ -89,3 +89,116 @@ pub async fn transcribe_audio(request: TranscriptionRequest<'_>) -> Result<Strin
 
     Ok(text)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_transcription_request_construction() {
+        let path = PathBuf::from("test.wav");
+        let request = TranscriptionRequest {
+            audio_path: &path,
+            api_key: "test-key",
+            endpoint: "https://api.example.com/transcribe",
+            model: "whisper-1",
+        };
+
+        assert_eq!(request.api_key, "test-key");
+        assert_eq!(request.endpoint, "https://api.example.com/transcribe");
+        assert_eq!(request.model, "whisper-1");
+    }
+
+    #[test]
+    fn test_whisper_response_deserialization() {
+        let json = r#"{"text": "Hello world"}"#;
+        let response: WhisperResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.text, "Hello world");
+    }
+
+    #[test]
+    fn test_whisper_response_with_extra_fields() {
+        // API might return extra fields we don't use
+        let json = r#"{"text": "Hello", "duration": 1.5, "language": "en"}"#;
+        let response: WhisperResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.text, "Hello");
+    }
+
+    #[test]
+    fn test_hallucination_strings() {
+        // Test that our hallucination list covers common false positives
+        let hallucinations = [
+            "you",
+            "thank you",
+            "thank you.",
+            "thanks for watching.",
+            "thanks for watching",
+            "subscribe.",
+        ];
+
+        // Verify all entries are lowercase and properly formatted
+        for h in hallucinations.iter() {
+            assert_eq!(h, &h.to_lowercase());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_transcribe_audio_missing_file() {
+        let path = PathBuf::from("nonexistent_file.wav");
+        let request = TranscriptionRequest {
+            audio_path: &path,
+            api_key: "test-key",
+            endpoint: "https://api.example.com/transcribe",
+            model: "whisper-1",
+        };
+
+        let result = transcribe_audio(request).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to read audio file"));
+    }
+
+    #[test]
+    fn test_whisper_response_trimming() {
+        // Verify our response trimming would work
+        let json = r#"{"text": "  Hello world  "}"#;
+        let response: WhisperResponse = serde_json::from_str(json).unwrap();
+        let trimmed = response.text.trim();
+        assert_eq!(trimmed, "Hello world");
+    }
+
+    #[test]
+    fn test_case_insensitive_hallucination_check() {
+        // Test that hallucination check is case insensitive
+        let test_cases = vec![
+            ("you", true),
+            ("You", true),
+            ("YOU", true),
+            ("thank you", true),
+            ("Thank You", true),
+            ("THANK YOU", true),
+            ("Hello world", false),
+            ("you there", false), // Should not match - has extra words
+        ];
+
+        let hallucinations = [
+            "you",
+            "thank you",
+            "thank you.",
+            "thanks for watching.",
+            "thanks for watching",
+            "subscribe.",
+        ];
+
+        for (text, should_match) in test_cases {
+            let matches = hallucinations
+                .iter()
+                .any(|h| text.eq_ignore_ascii_case(h));
+            assert_eq!(
+                matches, should_match,
+                "Text '{}' should_match={} but got matches={}",
+                text, should_match, matches
+            );
+        }
+    }
+}

@@ -1,13 +1,13 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { describe, it, expect, vi, beforeEach, Mock } from "vitest";
+import * as tauriCore from "@tauri-apps/api/core";
+import * as tauriEvent from "@tauri-apps/api/event";
 import App from "./App";
 
-// Get mocked functions
-const mockedInvoke = invoke as Mock;
-const mockedListen = listen as Mock;
+// Access mocked functions from the module
+const mockedInvoke = tauriCore.invoke as unknown as Mock;
+const mockedListen = tauriEvent.listen as unknown as Mock;
 
 describe("App", () => {
   beforeEach(() => {

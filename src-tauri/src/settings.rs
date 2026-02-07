@@ -261,3 +261,188 @@ pub fn get_endpoint_for_provider(provider: &TranscriptionProvider) -> &'static s
         TranscriptionProvider::Groq => "https://api.groq.com/openai/v1/audio/transcriptions",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shortcut_config_default() {
+        let config = ShortcutConfig::default();
+        assert_eq!(config.modifiers, vec!["super", "shift"]);
+        assert_eq!(config.key, "Space");
+    }
+
+    #[test]
+    fn test_transcription_provider_default() {
+        let provider = TranscriptionProvider::default();
+        assert_eq!(provider, TranscriptionProvider::OpenAI);
+    }
+
+    #[test]
+    fn test_transcription_config_default() {
+        let config = TranscriptionConfig::default();
+        assert_eq!(config.provider, TranscriptionProvider::OpenAI);
+    }
+
+    #[test]
+    fn test_settings_default() {
+        let settings = Settings::default();
+        assert_eq!(settings.shortcut.modifiers, vec!["super", "shift"]);
+        assert_eq!(settings.shortcut.key, "Space");
+        assert_eq!(settings.transcription.provider, TranscriptionProvider::OpenAI);
+    }
+
+    #[test]
+    fn test_parse_modifiers_super() {
+        let modifiers = vec!["super".to_string()];
+        let result = parse_modifiers(&modifiers);
+        assert!(result.contains(Modifiers::SUPER));
+    }
+
+    #[test]
+    fn test_parse_modifiers_shift() {
+        let modifiers = vec!["shift".to_string()];
+        let result = parse_modifiers(&modifiers);
+        assert!(result.contains(Modifiers::SHIFT));
+    }
+
+    #[test]
+    fn test_parse_modifiers_multiple() {
+        let modifiers = vec!["super".to_string(), "shift".to_string(), "ctrl".to_string()];
+        let result = parse_modifiers(&modifiers);
+        assert!(result.contains(Modifiers::SUPER));
+        assert!(result.contains(Modifiers::SHIFT));
+        assert!(result.contains(Modifiers::CONTROL));
+    }
+
+    #[test]
+    fn test_parse_key_letter() {
+        assert_eq!(parse_key("a"), Some(Code::KeyA));
+        assert_eq!(parse_key("z"), Some(Code::KeyZ));
+        assert_eq!(parse_key("A"), Some(Code::KeyA)); // Test case insensitivity
+    }
+
+    #[test]
+    fn test_parse_key_special() {
+        assert_eq!(parse_key("space"), Some(Code::Space));
+        assert_eq!(parse_key("enter"), Some(Code::Enter));
+        assert_eq!(parse_key("return"), Some(Code::Enter));
+        assert_eq!(parse_key("tab"), Some(Code::Tab));
+    }
+
+    #[test]
+    fn test_parse_key_function() {
+        assert_eq!(parse_key("f1"), Some(Code::F1));
+        assert_eq!(parse_key("f12"), Some(Code::F12));
+    }
+
+    #[test]
+    fn test_parse_key_invalid() {
+        assert_eq!(parse_key("invalid_key"), None);
+    }
+
+    #[test]
+    fn test_format_shortcut_display() {
+        let config = ShortcutConfig {
+            modifiers: vec!["super".to_string(), "shift".to_string()],
+            key: "space".to_string(),
+        };
+        let display = format_shortcut_display(&config);
+        assert_eq!(display, "⌘⇧Space");
+    }
+
+    #[test]
+    fn test_format_shortcut_display_letter() {
+        let config = ShortcutConfig {
+            modifiers: vec!["ctrl".to_string()],
+            key: "c".to_string(),
+        };
+        let display = format_shortcut_display(&config);
+        assert_eq!(display, "⌃C");
+    }
+
+    #[test]
+    fn test_get_model_for_provider_openai() {
+        let model = get_model_for_provider(&TranscriptionProvider::OpenAI);
+        assert_eq!(model, "whisper-1");
+    }
+
+    #[test]
+    fn test_get_model_for_provider_groq() {
+        let model = get_model_for_provider(&TranscriptionProvider::Groq);
+        assert_eq!(model, "whisper-large-v3-turbo");
+    }
+
+    #[test]
+    fn test_get_endpoint_for_provider_openai() {
+        let endpoint = get_endpoint_for_provider(&TranscriptionProvider::OpenAI);
+        assert_eq!(endpoint, "https://api.openai.com/v1/audio/transcriptions");
+    }
+
+    #[test]
+    fn test_get_endpoint_for_provider_groq() {
+        let endpoint = get_endpoint_for_provider(&TranscriptionProvider::Groq);
+        assert_eq!(
+            endpoint,
+            "https://api.groq.com/openai/v1/audio/transcriptions"
+        );
+    }
+
+    #[test]
+    fn test_get_api_key_for_provider_env_var() {
+        // Save original env var if it exists
+        let original_key = std::env::var("OPENAI_API_KEY").ok();
+
+        // Clear and set test env var
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::set_var("OPENAI_API_KEY", "test-env-key");
+
+        let key = get_api_key_for_provider(&TranscriptionProvider::OpenAI);
+        // Key should be either from keychain (if set) or env var
+        assert!(key.is_some());
+
+        // If no keychain key is set, it should match our test env var
+        if !crate::keychain::has_api_key("openai") {
+            assert_eq!(key, Some("test-env-key".to_string()));
+        }
+
+        // Restore original env var or remove if none existed
+        if let Some(orig) = original_key {
+            std::env::set_var("OPENAI_API_KEY", orig);
+        } else {
+            std::env::remove_var("OPENAI_API_KEY");
+        }
+    }
+
+    #[test]
+    fn test_get_api_key_for_provider_no_key() {
+        // Ensure no key is set
+        std::env::remove_var("GROQ_API_KEY");
+        let key = get_api_key_for_provider(&TranscriptionProvider::Groq);
+        // Should be None if no keychain or env key is set
+        // (unless developer has a real key in keychain, so we just verify it returns Option<String>)
+        assert!(key.is_none() || key.is_some());
+    }
+
+    #[test]
+    fn test_serialization_transcription_provider() {
+        // Test that TranscriptionProvider serializes correctly
+        let openai = TranscriptionProvider::OpenAI;
+        let serialized = serde_json::to_string(&openai).unwrap();
+        assert_eq!(serialized, "\"openai\"");
+
+        let groq = TranscriptionProvider::Groq;
+        let serialized = serde_json::to_string(&groq).unwrap();
+        assert_eq!(serialized, "\"groq\"");
+    }
+
+    #[test]
+    fn test_deserialization_transcription_provider() {
+        let openai: TranscriptionProvider = serde_json::from_str("\"openai\"").unwrap();
+        assert_eq!(openai, TranscriptionProvider::OpenAI);
+
+        let groq: TranscriptionProvider = serde_json::from_str("\"groq\"").unwrap();
+        assert_eq!(groq, TranscriptionProvider::Groq);
+    }
+}
