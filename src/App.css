@@ -753,14 +753,14 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .api-key-row {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .api-key-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+  align-items: baseline;
+  margin-bottom: 6px;
 }
 
 .api-key-label {
@@ -784,26 +784,31 @@
 
 .api-key-input-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
-.api-key-input {
+.api-key-input-wrapper {
   flex: 1;
-  padding: 8px 12px;
+  position: relative;
+  min-width: 0;
+}
+
+.api-key-input {
+  width: 100%;
+  padding: 7px 32px 7px 10px;
   font-family: 'Cormorant Garamond', serif;
   font-size: 14px;
-  border: 2px solid var(--ink-faded);
+  border: 1.5px solid var(--ink-faded);
   border-radius: 3px;
   background: var(--vellum);
   color: var(--ink-dark);
   outline: none;
-  min-width: 0;
 }
 
 .api-key-input:focus {
   border-color: var(--gold-dark);
-  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.2);
+  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.15);
 }
 
 .api-key-input::placeholder {
@@ -811,43 +816,79 @@
   font-style: italic;
 }
 
-.api-key-toggle {
-  padding: 8px 10px;
-  background: var(--parchment);
-  border: 2px solid var(--ink-faded);
-  border-radius: 3px;
-  color: var(--ink-sepia);
+/* Eye toggle inside input */
+.api-key-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
   cursor: pointer;
+  padding: 2px;
+  color: var(--ink-faded);
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.api-key-eye:hover {
+  color: var(--ink-sepia);
+}
+
+.api-key-eye svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Configured key display (read-only) */
+.api-key-display {
+  flex: 1;
+  padding: 7px 10px;
+  font-family: 'Cormorant Garamond', serif;
   font-size: 14px;
+  color: var(--ink-faded);
+  background: var(--parchment-dark);
+  border: 1.5px solid transparent;
+  border-radius: 3px;
+  letter-spacing: 2px;
+  min-width: 0;
+  user-select: none;
+}
+
+/* Small × clear button */
+.api-key-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faded);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 3px;
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
-.api-key-toggle:hover {
-  background: var(--vellum);
-  border-color: var(--ink-brown);
+.api-key-clear:hover:not(:disabled) {
+  color: var(--wax-red);
+  background: var(--error-bg);
+}
+
+.api-key-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .btn.small {
   flex: none;
-  padding: 8px 14px;
+  padding: 7px 14px;
   font-size: 10px;
   min-width: auto;
 }
 
-.btn.danger {
-  background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
-  border-color: var(--wax-red);
-  color: var(--wax-red);
-}
-
-.btn.danger:hover:not(:disabled) {
-  background: var(--error-bg);
-  border-color: var(--wax-red-light);
-}
-
 .warning {
-  margin-top: 12px;
+  margin-bottom: 14px;
   padding: 10px 14px;
   background: rgba(139, 37, 0, 0.08);
   border: 1px solid var(--wax-red);

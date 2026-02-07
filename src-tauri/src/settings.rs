@@ -30,15 +30,15 @@ impl Default for TranscriptionProvider {
     }
 }
 
-// API keys are now stored securely in the OS keychain
-// This empty struct is kept for backwards compatibility with old settings files
+// API keys are now stored securely in the OS keychain.
+// This struct is kept only so old settings files deserialize without error.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct ApiKeysConfig {
-    // Legacy fields - ignored, keys are read from keychain
     #[serde(default, skip_serializing)]
-    pub openai_api_key: Option<String>,
+    openai_api_key: Option<String>,
     #[serde(default, skip_serializing)]
-    pub groq_api_key: Option<String>,
+    groq_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,10 +267,3 @@ pub fn get_endpoint_for_provider(provider: &TranscriptionProvider) -> &'static s
     }
 }
 
-/// Get display name for a provider
-pub fn get_provider_display_name(provider: &TranscriptionProvider) -> &'static str {
-    match provider {
-        TranscriptionProvider::OpenAI => "OpenAI Whisper",
-        TranscriptionProvider::Groq => "Groq Whisper",
-    }
-}
