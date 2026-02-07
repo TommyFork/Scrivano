@@ -747,3 +747,297 @@
       0 2px 4px rgba(0, 0, 0, 0.2);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   API KEYS SECTION
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.api-key-row {
+  margin-bottom: 14px;
+}
+
+.api-key-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.api-key-label {
+  font-family: 'Cinzel', serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-sepia);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.api-key-status {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.api-key-status.configured {
+  color: var(--verdigris);
+}
+
+.api-key-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.api-key-input-wrapper {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+
+.api-key-input {
+  width: 100%;
+  padding: 7px 32px 7px 10px;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  border: 1.5px solid var(--ink-faded);
+  border-radius: 3px;
+  background: var(--vellum);
+  color: var(--ink-dark);
+  outline: none;
+}
+
+.api-key-input:focus {
+  border-color: var(--gold-dark);
+  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.15);
+}
+
+.api-key-input::placeholder {
+  color: var(--ink-faded);
+  font-style: italic;
+}
+
+/* Eye toggle inside input */
+.api-key-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--ink-faded);
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.api-key-eye:hover {
+  color: var(--ink-sepia);
+}
+
+.api-key-eye svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Configured key display (read-only) */
+.api-key-display {
+  flex: 1;
+  padding: 7px 10px;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: var(--ink-faded);
+  background: var(--parchment-dark);
+  border: 1.5px solid transparent;
+  border-radius: 3px;
+  letter-spacing: 2px;
+  min-width: 0;
+  user-select: none;
+}
+
+/* Small × clear button */
+.api-key-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faded);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.api-key-clear:hover:not(:disabled) {
+  color: var(--wax-red);
+  background: var(--error-bg);
+}
+
+.api-key-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn.small {
+  flex: none;
+  padding: 7px 14px;
+  font-size: 10px;
+  min-width: auto;
+}
+
+.warning {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(139, 37, 0, 0.08);
+  border: 1px solid var(--wax-red);
+  border-left: 3px solid var(--wax-red);
+  border-radius: 2px;
+  color: var(--error-ink);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODEL SELECTOR
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.model-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.model-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  border: 2px solid var(--ink-faded);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.model-option:hover:not(.disabled) {
+  background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  border-color: var(--ink-brown);
+}
+
+.model-option.selected {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.3);
+}
+
+.model-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-name {
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-sepia);
+}
+
+.model-id {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 12px;
+  color: var(--ink-faded);
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.model-unavailable {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 11px;
+  color: var(--wax-red);
+  margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SETUP REQUIRED
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.setup-required {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 30px 20px;
+  gap: 12px;
+}
+
+.setup-required p {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 16px;
+  color: var(--ink-sepia);
+  margin: 0;
+}
+
+.setup-required .setup-hint {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-faded);
+}
+
+.setup-required .btn {
+  margin-top: 8px;
+  flex: none;
+  min-width: 140px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CURRENT MODEL DISPLAY IN HINT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.current-model {
+  font-family: 'Cinzel', serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-faded);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(92, 64, 51, 0.1);
+  padding: 2px 6px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE - API KEYS & MODEL SELECTOR
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  .api-key-input {
+    background: var(--vellum);
+    border-color: var(--ink-faded);
+  }
+
+  .api-key-input:focus {
+    border-color: var(--gold);
+  }
+
+  .api-key-toggle {
+    background: var(--parchment);
+  }
+
+  .model-option {
+    background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  }
+
+  .model-option.selected {
+    border-color: var(--gold-bright);
+  }
+
+  .current-model {
+    background: rgba(200, 180, 150, 0.1);
+  }
+}

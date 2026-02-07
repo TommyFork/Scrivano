@@ -1,14 +1,17 @@
 mod audio;
 mod cursor;
+mod keychain;
 mod paste;
 mod settings;
 mod transcription;
 
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
-use settings::ShortcutConfig;
+use settings::{Settings, ShortcutConfig, TranscriptionProvider};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
@@ -56,6 +59,10 @@ impl TrayIcons {
 struct ShortcutSettings {
     current_shortcut: Option<Shortcut>,
     config: ShortcutConfig,
+}
+
+struct SettingsState {
+    settings: Settings,
 }
 
 #[tauri::command]
@@ -165,10 +172,144 @@ fn set_shortcut(
     })
 }
 
-fn get_api_key() -> Result<String, String> {
-    std::env::var("OPENAI_API_KEY")
-        .map_err(|_| "OPENAI_API_KEY environment variable not set".to_string())
+// ============================================================================
+// API Key and Provider Commands
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ApiKeyStatus {
+    openai_configured: bool,
+    groq_configured: bool,
+    openai_source: Option<String>,
+    groq_source: Option<String>,
 }
+
+fn get_api_key_status_internal() -> ApiKeyStatus {
+    let openai_from_keychain = keychain::has_api_key("openai");
+    let openai_from_env = std::env::var("OPENAI_API_KEY").is_ok();
+    let groq_from_keychain = keychain::has_api_key("groq");
+    let groq_from_env = std::env::var("GROQ_API_KEY").is_ok();
+
+    ApiKeyStatus {
+        openai_configured: openai_from_keychain || openai_from_env,
+        groq_configured: groq_from_keychain || groq_from_env,
+        openai_source: if openai_from_keychain {
+            Some("keychain".to_string())
+        } else if openai_from_env {
+            Some("env".to_string())
+        } else {
+            None
+        },
+        groq_source: if groq_from_keychain {
+            Some("keychain".to_string())
+        } else if groq_from_env {
+            Some("env".to_string())
+        } else {
+            None
+        },
+    }
+}
+
+#[tauri::command]
+fn get_api_key_status() -> ApiKeyStatus {
+    get_api_key_status_internal()
+}
+
+#[tauri::command]
+fn set_api_key(provider: String, api_key: String) -> Result<ApiKeyStatus, String> {
+    let provider_key = match provider.to_lowercase().as_str() {
+        "openai" => "openai",
+        "groq" => "groq",
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+
+    if api_key.trim().is_empty() {
+        // Delete the key from keychain
+        keychain::delete_api_key(provider_key)?;
+    } else {
+        // Store the key in keychain
+        keychain::store_api_key(provider_key, api_key.trim())?;
+    }
+
+    Ok(get_api_key_status_internal())
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ProviderInfo {
+    id: String,
+    name: String,
+    model: String,
+    available: bool,
+}
+
+#[tauri::command]
+fn get_available_providers() -> Vec<ProviderInfo> {
+    vec![
+        ProviderInfo {
+            id: "openai".to_string(),
+            name: "OpenAI Whisper".to_string(),
+            model: "whisper-1".to_string(),
+            available: settings::get_api_key_for_provider(&TranscriptionProvider::OpenAI).is_some(),
+        },
+        ProviderInfo {
+            id: "groq".to_string(),
+            name: "Groq Whisper".to_string(),
+            model: "whisper-large-v3-turbo".to_string(),
+            available: settings::get_api_key_for_provider(&TranscriptionProvider::Groq).is_some(),
+        },
+    ]
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct TranscriptionSettings {
+    provider: String,
+    model: String,
+}
+
+#[tauri::command]
+fn get_transcription_settings(
+    state: tauri::State<'_, Mutex<SettingsState>>,
+) -> TranscriptionSettings {
+    let settings = &state.lock().unwrap().settings;
+    TranscriptionSettings {
+        provider: match settings.transcription.provider {
+            TranscriptionProvider::OpenAI => "openai".to_string(),
+            TranscriptionProvider::Groq => "groq".to_string(),
+        },
+        model: settings::get_model_for_provider(&settings.transcription.provider).to_string(),
+    }
+}
+
+#[tauri::command]
+fn set_transcription_provider(
+    provider: String,
+    state: tauri::State<'_, Mutex<SettingsState>>,
+) -> Result<TranscriptionSettings, String> {
+    let mut state_guard = state.lock().unwrap();
+
+    let new_provider = match provider.to_lowercase().as_str() {
+        "openai" => TranscriptionProvider::OpenAI,
+        "groq" => TranscriptionProvider::Groq,
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+
+    // Validate that the provider has an API key configured
+    if settings::get_api_key_for_provider(&new_provider).is_none() {
+        return Err(format!("No API key configured for {}", provider));
+    }
+
+    state_guard.settings.transcription.provider = new_provider.clone();
+    settings::save_settings(&state_guard.settings)?;
+
+    Ok(TranscriptionSettings {
+        provider,
+        model: settings::get_model_for_provider(&new_provider).to_string(),
+    })
+}
+
+// ============================================================================
+// Window and Recording Helpers
+// ============================================================================
 
 fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let window_width = 320;
@@ -267,11 +408,25 @@ async fn handle_recording_stop(
         let _ = app.emit("indicator-state", "processing");
     }
 
-    let api_key = match get_api_key() {
-        Ok(key) => key,
-        Err(e) => {
-            eprintln!("API key error: {}", e);
-            let _ = app.emit("error", e);
+    // Get settings and API key for the selected provider
+    let (api_key, endpoint, model) = {
+        let settings_state = app.state::<Mutex<SettingsState>>();
+        let settings = &settings_state.lock().unwrap().settings;
+
+        let provider = &settings.transcription.provider;
+        let api_key = settings::get_api_key_for_provider(provider);
+        let endpoint = settings::get_endpoint_for_provider(provider);
+        let model = settings::get_model_for_provider(provider);
+
+        (api_key, endpoint, model)
+    };
+
+    let api_key = match api_key {
+        Some(key) => key,
+        None => {
+            let err = "No API key configured. Please add an API key in Settings.";
+            eprintln!("API key error: {}", err);
+            let _ = app.emit("error", err);
             if !new_recording_active() {
                 destroy_indicator_window(&app);
             }
@@ -287,7 +442,14 @@ async fn handle_recording_stop(
 
     let _ = app.emit("transcription-status", "Transcribing...");
 
-    match transcription::transcribe_audio(&audio_path, &api_key).await {
+    let request = transcription::TranscriptionRequest {
+        audio_path: &audio_path,
+        api_key: &api_key,
+        endpoint,
+        model,
+    };
+
+    match transcription::transcribe_audio(request).await {
         Ok(text) => {
             app.state::<Mutex<AppState>>()
                 .lock()
@@ -344,6 +506,9 @@ pub fn run() {
         .manage(Mutex::new(ShortcutSettings {
             current_shortcut: None,
             config: shortcut_config.clone(),
+        }))
+        .manage(Mutex::new(SettingsState {
+            settings: loaded_settings,
         }))
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -595,6 +760,11 @@ pub fn run() {
             hide_window,
             get_shortcut,
             set_shortcut,
+            get_api_key_status,
+            set_api_key,
+            get_available_providers,
+            get_transcription_settings,
+            set_transcription_provider,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
