@@ -1,4 +1,5 @@
 mod audio;
+mod keychain;
 mod paste;
 mod settings;
 mod transcription;
@@ -142,24 +143,24 @@ struct ApiKeyStatus {
     groq_source: Option<String>,
 }
 
-fn get_api_key_status_internal(settings: &Settings) -> ApiKeyStatus {
-    let openai_from_settings = settings.api_keys.openai_api_key.is_some();
+fn get_api_key_status_internal() -> ApiKeyStatus {
+    let openai_from_keychain = keychain::has_api_key("openai");
     let openai_from_env = std::env::var("OPENAI_API_KEY").is_ok();
-    let groq_from_settings = settings.api_keys.groq_api_key.is_some();
+    let groq_from_keychain = keychain::has_api_key("groq");
     let groq_from_env = std::env::var("GROQ_API_KEY").is_ok();
 
     ApiKeyStatus {
-        openai_configured: openai_from_settings || openai_from_env,
-        groq_configured: groq_from_settings || groq_from_env,
-        openai_source: if openai_from_settings {
-            Some("settings".to_string())
+        openai_configured: openai_from_keychain || openai_from_env,
+        groq_configured: groq_from_keychain || groq_from_env,
+        openai_source: if openai_from_keychain {
+            Some("keychain".to_string())
         } else if openai_from_env {
             Some("env".to_string())
         } else {
             None
         },
-        groq_source: if groq_from_settings {
-            Some("settings".to_string())
+        groq_source: if groq_from_keychain {
+            Some("keychain".to_string())
         } else if groq_from_env {
             Some("env".to_string())
         } else {
@@ -169,38 +170,27 @@ fn get_api_key_status_internal(settings: &Settings) -> ApiKeyStatus {
 }
 
 #[tauri::command]
-fn get_api_key_status(state: tauri::State<'_, Mutex<SettingsState>>) -> ApiKeyStatus {
-    let settings = &state.lock().unwrap().settings;
-    get_api_key_status_internal(settings)
+fn get_api_key_status() -> ApiKeyStatus {
+    get_api_key_status_internal()
 }
 
 #[tauri::command]
-fn set_api_key(
-    provider: String,
-    api_key: String,
-    state: tauri::State<'_, Mutex<SettingsState>>,
-) -> Result<ApiKeyStatus, String> {
-    let mut state_guard = state.lock().unwrap();
-
-    let key_value = if api_key.trim().is_empty() {
-        None
-    } else {
-        Some(api_key.trim().to_string())
+fn set_api_key(provider: String, api_key: String) -> Result<ApiKeyStatus, String> {
+    let provider_key = match provider.to_lowercase().as_str() {
+        "openai" => "openai",
+        "groq" => "groq",
+        _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
-    match provider.to_lowercase().as_str() {
-        "openai" => {
-            state_guard.settings.api_keys.openai_api_key = key_value;
-        }
-        "groq" => {
-            state_guard.settings.api_keys.groq_api_key = key_value;
-        }
-        _ => return Err(format!("Unknown provider: {}", provider)),
+    if api_key.trim().is_empty() {
+        // Delete the key from keychain
+        keychain::delete_api_key(provider_key)?;
+    } else {
+        // Store the key in keychain
+        keychain::store_api_key(provider_key, api_key.trim())?;
     }
 
-    settings::save_settings(&state_guard.settings)?;
-
-    Ok(get_api_key_status_internal(&state_guard.settings))
+    Ok(get_api_key_status_internal())
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -212,23 +202,19 @@ struct ProviderInfo {
 }
 
 #[tauri::command]
-fn get_available_providers(state: tauri::State<'_, Mutex<SettingsState>>) -> Vec<ProviderInfo> {
-    let settings = &state.lock().unwrap().settings;
-
+fn get_available_providers() -> Vec<ProviderInfo> {
     vec![
         ProviderInfo {
             id: "openai".to_string(),
             name: "OpenAI Whisper".to_string(),
             model: "whisper-1".to_string(),
-            available: settings::get_api_key_for_provider(&TranscriptionProvider::OpenAI, settings)
-                .is_some(),
+            available: settings::get_api_key_for_provider(&TranscriptionProvider::OpenAI).is_some(),
         },
         ProviderInfo {
             id: "groq".to_string(),
             name: "Groq Whisper".to_string(),
             model: "whisper-large-v3-turbo".to_string(),
-            available: settings::get_api_key_for_provider(&TranscriptionProvider::Groq, settings)
-                .is_some(),
+            available: settings::get_api_key_for_provider(&TranscriptionProvider::Groq).is_some(),
         },
     ]
 }
@@ -267,7 +253,7 @@ fn set_transcription_provider(
     };
 
     // Validate that the provider has an API key configured
-    if settings::get_api_key_for_provider(&new_provider, &state_guard.settings).is_none() {
+    if settings::get_api_key_for_provider(&new_provider).is_none() {
         return Err(format!("No API key configured for {}", provider));
     }
 
@@ -301,7 +287,7 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
         let settings = &settings_state.lock().unwrap().settings;
 
         let provider = &settings.transcription.provider;
-        let api_key = settings::get_api_key_for_provider(provider, settings);
+        let api_key = settings::get_api_key_for_provider(provider);
         let endpoint = settings::get_endpoint_for_provider(provider);
         let model = settings::get_model_for_provider(provider);
 

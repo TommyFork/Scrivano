@@ -59,7 +59,7 @@ A macOS voice-to-text tray app built with Tauri 2.x. Press and hold a global hot
    **Option A: In-app configuration (recommended)**
    - Launch the app and click the settings gear icon
    - Enter your API key(s) in the API Keys section
-   - Keys are stored securely in `~/.config/scrivano/settings.json`
+   - Keys are stored securely in the macOS Keychain
 
    **Option B: Environment variables**
    ```bash
@@ -108,7 +108,8 @@ Click the gear icon in the popup to access settings:
 ### API Keys
 - **OpenAI**: Enter your OpenAI API key (starts with `sk-`)
 - **Groq**: Enter your Groq API key (starts with `gsk_`)
-- Keys can also be set via environment variables (app settings take priority)
+- Keys configured in-app are stored securely in the **macOS Keychain**
+- Keys can also be set via environment variables (keychain takes priority)
 
 ### Transcription Model
 - Select your preferred provider from the available options
@@ -120,10 +121,14 @@ Click the gear icon in the popup to access settings:
 
 ## Settings Storage
 
-Settings are stored in `~/.config/scrivano/settings.json`:
+**Settings** are stored in `~/.config/scrivano/settings.json`:
 - Recording shortcut preferences
-- API keys (when configured in-app)
 - Selected transcription provider
+
+**API Keys** are stored securely in the **macOS Keychain** (under the service name "scrivano"):
+- Keys are never written to disk in plaintext
+- Access is protected by macOS security policies
+- Keys can be managed via Keychain Access.app if needed
 
 ## Tech Stack
 
@@ -145,6 +150,7 @@ src-tauri/             # Rust backend
     audio.rs           # Audio recording
     transcription.rs   # Whisper API client
     settings.rs        # Settings management
+    keychain.rs        # Secure API key storage
     paste.rs           # Clipboard and paste
   Cargo.toml           # Rust dependencies
   tauri.conf.json      # Tauri configuration

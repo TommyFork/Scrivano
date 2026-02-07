@@ -30,11 +30,14 @@ impl Default for TranscriptionProvider {
     }
 }
 
+// API keys are now stored securely in the OS keychain
+// This empty struct is kept for backwards compatibility with old settings files
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ApiKeysConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // Legacy fields - ignored, keys are read from keychain
+    #[serde(default, skip_serializing)]
     pub openai_api_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub groq_api_key: Option<String>,
 }
 
@@ -232,23 +235,20 @@ pub fn format_shortcut_display(config: &ShortcutConfig) -> String {
     format!("{}{}", parts.join(""), key_display)
 }
 
-/// Get API key for a provider, preferring settings over environment variables
-pub fn get_api_key_for_provider(
-    provider: &TranscriptionProvider,
-    settings: &Settings,
-) -> Option<String> {
-    match provider {
-        TranscriptionProvider::OpenAI => settings
-            .api_keys
-            .openai_api_key
-            .clone()
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
-        TranscriptionProvider::Groq => settings
-            .api_keys
-            .groq_api_key
-            .clone()
-            .or_else(|| std::env::var("GROQ_API_KEY").ok()),
-    }
+/// Get API key for a provider, preferring keychain over environment variables
+pub fn get_api_key_for_provider(provider: &TranscriptionProvider) -> Option<String> {
+    let provider_key = match provider {
+        TranscriptionProvider::OpenAI => "openai",
+        TranscriptionProvider::Groq => "groq",
+    };
+
+    let env_var = match provider {
+        TranscriptionProvider::OpenAI => "OPENAI_API_KEY",
+        TranscriptionProvider::Groq => "GROQ_API_KEY",
+    };
+
+    // Try keychain first, then fall back to environment variable
+    crate::keychain::get_api_key(provider_key).or_else(|| std::env::var(env_var).ok())
 }
 
 /// Get the model name for a provider
