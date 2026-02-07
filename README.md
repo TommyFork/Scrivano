@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/33d38cd3-5502-4b29-9005-59c14f79c1d6" alt="Scrivano" width="600" />
-</p>
-
 <h1 align="center">Scrivano</h1>
 
 <p align="center">
@@ -13,6 +9,10 @@
   <img src="https://img.shields.io/badge/platform-macOS-blue" alt="macOS" />
   <img src="https://img.shields.io/badge/built_with-Tauri_2-orange" alt="Tauri 2" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/33d38cd3-5502-4b29-9005-59c14f79c1d6" alt="Scrivano" width="600" />
 </p>
 
 ---
