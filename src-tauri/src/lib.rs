@@ -640,7 +640,12 @@ pub fn run() {
                         match event.state() {
                             ShortcutState::Pressed => {
                                 // Save the frontmost app for later focus restoration.
-                                let original_app = cursor::get_frontmost_bundle_id();
+                                // Filter out our own bundle ID — when running as a .app,
+                                // the global shortcut can briefly activate Scrivano, and
+                                // trying to send AppleScript to ourselves deadlocks.
+                                let own_bundle_id = "com.tommyross.scrivano";
+                                let original_app = cursor::get_frontmost_bundle_id()
+                                    .filter(|id| id != own_bundle_id);
 
                                 match audio::start_recording() {
                                     Ok(handle) => {
