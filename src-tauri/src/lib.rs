@@ -1,4 +1,5 @@
 mod audio;
+mod cursor;
 mod paste;
 mod settings;
 mod transcription;
@@ -6,13 +7,12 @@ mod transcription;
 use audio::RecordingHandle;
 use serde::{Deserialize, Serialize};
 use settings::ShortcutConfig;
-use std::sync::Mutex;
-#[cfg(target_os = "macos")]
-use tauri::ActivationPolicy;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager,
+    AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -24,6 +24,8 @@ pub struct AppState {
 
 struct RecorderState {
     handle: Option<RecordingHandle>,
+    stop_polling: Arc<AtomicBool>,
+    original_app: Option<String>,
 }
 
 #[derive(Clone)]
@@ -178,15 +180,110 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let _ = window.set_focus();
 }
 
-async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
+/// Create or reuse the indicator window at the mouse cursor position.
+/// Returns (window, is_new_window). When is_new_window is false, the
+/// existing window was repositioned and the ready handshake can be skipped.
+fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bool) {
+    let width: i32 = 36;
+    let height: i32 = 36;
+
+    let (mx, my) = cursor::get_mouse_position().unwrap_or((100, 100));
+
+    // Place above-right of mouse cursor
+    let pos_x = mx + 8;
+    let pos_y = if my - height - 12 >= 4 {
+        my - height - 12
+    } else {
+        my + 4
+    };
+
+    // Clamp to screen bounds
+    #[cfg(target_os = "macos")]
+    let (pos_x, pos_y) = {
+        use core_graphics::display::CGDisplay;
+        let bounds = CGDisplay::main().bounds();
+        let screen_w = bounds.size.width as i32;
+        let screen_h = bounds.size.height as i32;
+
+        (
+            pos_x.max(4).min(screen_w - width - 4),
+            pos_y.max(4).min(screen_h - height - 4),
+        )
+    };
+
+    // Reuse existing indicator window if it exists (avoids destroy/create race)
+    if let Some(existing) = app.get_webview_window("indicator") {
+        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            pos_x, pos_y,
+        )));
+        let _ = existing.show();
+        let _ = app.emit("indicator-state", "recording");
+        return (Some(existing), false);
+    }
+
+    let url = WebviewUrl::App("indicator.html".into());
+
+    match WebviewWindowBuilder::new(app, "indicator", url)
+        .title("Recording")
+        .inner_size(width as f64, height as f64)
+        .position(pos_x as f64, pos_y as f64)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .visible(true)
+        .build()
+    {
+        Ok(window) => (Some(window), true),
+        Err(e) => {
+            eprintln!("Failed to create indicator window: {}", e);
+            (None, false)
+        }
+    }
+}
+
+fn destroy_indicator_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("indicator") {
+        let _ = window.destroy();
+    }
+}
+
+async fn handle_recording_stop(
+    app: AppHandle,
+    audio_path: std::path::PathBuf,
+    original_app: Option<String>,
+) {
+    // Helper: check if a NEW recording is in progress (our indicator may have been reused).
+    // When true, we must not modify the indicator or paste — the user is re-recording.
+    let new_recording_active =
+        || -> bool { app.state::<Mutex<AppState>>().lock().unwrap().is_recording };
+
+    // Update indicator to processing state (only if no new recording started)
+    if !new_recording_active() {
+        eprintln!("[Scrivano] Emitting indicator-state: processing");
+        let _ = app.emit("indicator-state", "processing");
+    }
+
     let api_key = match get_api_key() {
         Ok(key) => key,
         Err(e) => {
             eprintln!("API key error: {}", e);
             let _ = app.emit("error", e);
+            if !new_recording_active() {
+                destroy_indicator_window(&app);
+            }
             return;
         }
     };
+
+    // Log audio file info for debugging
+    if let Ok(meta) = std::fs::metadata(&audio_path) {
+        let size_kb = meta.len() as f64 / 1024.0;
+        eprintln!("[Scrivano] Audio file: {:.1} KB", size_kb);
+    }
 
     let _ = app.emit("transcription-status", "Transcribing...");
 
@@ -198,14 +295,31 @@ async fn handle_recording_stop(app: AppHandle, audio_path: std::path::PathBuf) {
                 .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
-            if let Err(e) = paste::set_clipboard_and_paste(&text) {
-                eprintln!("Failed to paste: {}", e);
-                let _ = app.emit("error", format!("Failed to paste: {}", e));
+            // Only hide indicator and paste if no new recording started
+            if !new_recording_active() {
+                destroy_indicator_window(&app);
+
+                // Paste to the original app (this will re-activate it)
+                let paste_result = if let Some(ref bundle_id) = original_app {
+                    paste::paste_to_app(&text, bundle_id)
+                } else {
+                    paste::set_clipboard_and_paste(&text)
+                };
+
+                if let Err(e) = paste_result {
+                    eprintln!("Failed to paste: {}", e);
+                    let _ = app.emit("error", format!("Failed to paste: {}", e));
+                }
+            } else {
+                eprintln!("[Scrivano] Skipping paste — new recording in progress");
             }
         }
         Err(e) => {
             eprintln!("Transcription failed: {}", e);
             let _ = app.emit("error", format!("Transcription failed: {}", e));
+            if !new_recording_active() {
+                destroy_indicator_window(&app);
+            }
         }
     }
 
@@ -222,7 +336,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Mutex::new(AppState::default()))
-        .manage(Mutex::new(RecorderState { handle: None }))
+        .manage(Mutex::new(RecorderState {
+            handle: None,
+            stop_polling: Arc::new(AtomicBool::new(false)),
+            original_app: None,
+        }))
         .manage(Mutex::new(ShortcutSettings {
             current_shortcut: None,
             config: shortcut_config.clone(),
@@ -317,6 +435,9 @@ pub fn run() {
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, _shortcut_ref, event| {
                         // Handle any registered shortcut (we only register one for recording)
+                        //
+                        // Lock ordering: always acquire recorder_state before app_state
+                        // to prevent deadlocks. handle_recording_stop only locks app_state.
                         let recorder_state = app.state::<Mutex<RecorderState>>();
                         let app_state = app.state::<Mutex<AppState>>();
 
@@ -326,20 +447,103 @@ pub fn run() {
                         };
 
                         match event.state() {
-                            ShortcutState::Pressed => match audio::start_recording() {
-                                Ok(handle) => {
-                                    recorder_state.lock().unwrap().handle = Some(handle);
-                                    app_state.lock().unwrap().is_recording = true;
-                                    set_tray_icon(true);
-                                    let _ = app.emit("recording-status", true);
+                            ShortcutState::Pressed => {
+                                // Save the frontmost app for later focus restoration.
+                                let original_app = cursor::get_frontmost_bundle_id();
+
+                                match audio::start_recording() {
+                                    Ok(handle) => {
+
+                                        // Create or reuse indicator window at mouse position.
+                                        // If reused, listeners are already mounted (skip ready handshake).
+                                        // Window ref is unused — Tauri owns the window lifecycle internally.
+                                        let (_indicator_window, is_new_window) = create_indicator_window(app);
+
+                                        // Register the ready listener BEFORE the window can emit.
+                                        // If reusing, mark ready immediately — the window is already live.
+                                        let ready = Arc::new(AtomicBool::new(!is_new_window));
+                                        let ready_clone = Arc::clone(&ready);
+                                        let listener_id = app.listen("indicator-ready", move |_| {
+                                            ready_clone.store(true, Ordering::Relaxed);
+                                        });
+
+                                        // Immediately re-activate the original app so focus isn't stolen.
+                                        // Use the fast variant (no 50ms sleep) since we're not pasting.
+                                        if let Some(ref bundle_id) = original_app {
+                                            let _ = paste::activate_app_fast(bundle_id);
+                                        }
+
+                                        // Get the audio levels Arc before storing the handle
+                                        let audio_levels_arc = handle.get_audio_levels_arc();
+
+                                        // Reset stop flag and store the handle
+                                        let stop_flag = Arc::new(AtomicBool::new(false));
+                                        {
+                                            let mut state = recorder_state.lock().unwrap();
+                                            state.stop_polling = Arc::clone(&stop_flag);
+                                            state.handle = Some(handle);
+                                            state.original_app = original_app;
+                                        }
+
+                                        // Start polling thread for audio levels.
+                                        // Wait for the indicator window to signal it's ready
+                                        // before emitting events, with a timeout fallback.
+                                        //
+                                        // NOTE: This thread is not joined — it exits when
+                                        // stop_flag is set (within ~50ms). Each recording gets
+                                        // a new Arc<AtomicBool>, so old threads always see
+                                        // their own flag go true and exit cleanly.
+                                        let app_clone = app.clone();
+
+                                        let app_for_unlisten = app.clone();
+                                        std::thread::spawn(move || {
+                                            // Wait up to 3s for indicator to signal ready
+                                            let start = std::time::Instant::now();
+                                            while !ready.load(Ordering::Relaxed)
+                                                && start.elapsed().as_millis() < 3000
+                                                && !stop_flag.load(Ordering::Relaxed)
+                                            {
+                                                std::thread::sleep(std::time::Duration::from_millis(20));
+                                            }
+                                            if ready.load(Ordering::Relaxed) {
+                                                eprintln!("[Scrivano] Indicator signaled ready after {}ms", start.elapsed().as_millis());
+                                            } else {
+                                                eprintln!("[Scrivano] Indicator ready timeout after {}ms", start.elapsed().as_millis());
+                                            }
+                                            app_for_unlisten.unlisten(listener_id);
+
+                                            while !stop_flag.load(Ordering::Relaxed) {
+                                                let levels =
+                                                    audio_levels_arc.lock().unwrap().clone();
+                                                let _ = app_clone.emit("audio-levels", &levels);
+                                                std::thread::sleep(
+                                                    std::time::Duration::from_millis(50),
+                                                );
+                                            }
+                                        });
+
+                                        app_state.lock().unwrap().is_recording = true;
+                                        set_tray_icon(true);
+                                        let _ = app.emit("recording-status", true);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to start recording: {}", e);
+                                        let _ = app.emit(
+                                            "error",
+                                            format!("Failed to start recording: {}", e),
+                                        );
+                                    }
                                 }
-                                Err(e) => {
-                                    eprintln!("Failed to start recording: {}", e);
-                                    let _ = app
-                                        .emit("error", format!("Failed to start recording: {}", e));
-                                }
-                            },
+                            }
                             ShortcutState::Released => {
+                                // Stop audio level polling and get original app
+                                let original_app;
+                                {
+                                    let state = recorder_state.lock().unwrap();
+                                    state.stop_polling.store(true, Ordering::Relaxed);
+                                    original_app = state.original_app.clone();
+                                }
+
                                 let handle = recorder_state.lock().unwrap().handle.take();
                                 app_state.lock().unwrap().is_recording = false;
                                 set_tray_icon(false);
@@ -350,7 +554,9 @@ pub fn run() {
                                     std::thread::spawn(move || match handle.stop() {
                                         Ok(path) => {
                                             tauri::async_runtime::block_on(handle_recording_stop(
-                                                app_clone, path,
+                                                app_clone,
+                                                path,
+                                                original_app,
                                             ));
                                         }
                                         Err(e) => {
@@ -359,6 +565,7 @@ pub fn run() {
                                                 "error",
                                                 format!("Failed to stop recording: {}", e),
                                             );
+                                            destroy_indicator_window(&app_clone);
                                         }
                                     });
                                 }
@@ -367,6 +574,9 @@ pub fn run() {
                     })
                     .build(),
             )?;
+
+            // Prompt for accessibility permission once at startup
+            cursor::prompt_accessibility_once();
 
             // Register the shortcut and store it in state
             app.global_shortcut().register(shortcut)?;

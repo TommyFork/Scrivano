@@ -30,7 +30,8 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
 
     let form = Form::new()
         .part("file", file_part)
-        .text("model", "whisper-1");
+        .text("model", "whisper-1")
+        .text("language", "en");
 
     let response = client
         .post("https://api.openai.com/v1/audio/transcriptions")
@@ -60,5 +61,25 @@ pub async fn transcribe_audio(audio_path: &Path, api_key: &str) -> Result<String
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    Ok(whisper_response.text.trim().to_string())
+    let text = whisper_response.text.trim().to_string();
+
+    // Whisper hallucinates these strings on silence/short audio.
+    // Only include phrases that are almost never intentional single-utterance transcriptions.
+    let hallucinations = [
+        "you",
+        "thank you",
+        "thank you.",
+        "thanks for watching.",
+        "thanks for watching",
+        "subscribe.",
+    ];
+    if hallucinations.iter().any(|h| text.eq_ignore_ascii_case(h)) {
+        eprintln!(
+            "[Scrivano] Filtered likely Whisper hallucination: {:?}",
+            text
+        );
+        return Err("No speech detected — hold the key longer and speak clearly".to_string());
+    }
+
+    Ok(text)
 }
