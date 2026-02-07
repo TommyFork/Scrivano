@@ -55,11 +55,13 @@ describe("App", () => {
   it("renders initial state correctly", async () => {
     render(<App />);
 
-    expect(screen.getByText("Awaiting thy voice")).toBeInTheDocument();
-    expect(
-screen.getByPlaceholderText("Speak unto the aether with ⌘⇧Space")
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Summon the scribe:/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Ready")).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText("Press ⌘⇧Space to record")
+      ).toBeInTheDocument();
+      expect(screen.getByText("whisper-1")).toBeInTheDocument();
+    });
   });
 
   it("fetches initial transcription and recording status on mount", async () => {
@@ -138,16 +140,16 @@ screen.getByPlaceholderText("Speak unto the aether with ⌘⇧Space")
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Duplicate")).not.toBeDisabled();
+      expect(screen.getByText("Copy")).not.toBeDisabled();
     });
   });
 
   it("disables copy button when no transcription", async () => {
-    mockedInvoke.mockResolvedValue("");
-
     render(<App />);
 
-    expect(screen.getByText("Duplicate")).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByText("Copy")).toBeDisabled();
+    });
   });
 
   it("copies transcription to clipboard when Duplicate is clicked", async () => {
@@ -166,7 +168,7 @@ screen.getByPlaceholderText("Speak unto the aether with ⌘⇧Space")
       expect(textarea).toHaveValue("Copy me");
     });
 
-    await user.click(screen.getByText("Duplicate"));
+    await user.click(screen.getByText("Copy"));
 
     expect(mockedInvoke).toHaveBeenCalledWith("copy_to_clipboard", {
       text: "Copy me",
@@ -210,7 +212,7 @@ screen.getByPlaceholderText("Speak unto the aether with ⌘⇧Space")
       expect(textarea).toHaveValue("text");
     });
 
-    await user.click(screen.getByText("Duplicate"));
+    await user.click(screen.getByText("Copy"));
 
     await waitFor(() => {
       expect(screen.getByText("Copy failed")).toBeInTheDocument();
@@ -244,13 +246,13 @@ it("updates status message after copying", async () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Awaiting thy voice")).toBeInTheDocument();
+      expect(screen.getByText("Ready")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText("Duplicate"));
+    await user.click(screen.getByText("Copy"));
 
     await waitFor(() => {
-      expect(screen.getByText("'Tis copied!")).toBeInTheDocument();
+      expect(screen.getByText("Copied!")).toBeInTheDocument();
     });
   });
 
@@ -330,7 +332,7 @@ it("updates status message after copying", async () => {
       expect(screen.getByText("Recording Shortcut")).toBeInTheDocument();
     });
 
-    it("shows current shortcut in settings", async () => {
+    it("shows current shortcut in settings after opening shortcut section", async () => {
       const user = userEvent.setup();
       render(<App />);
 
@@ -339,13 +341,16 @@ it("updates status message after copying", async () => {
       });
 
       await user.click(screen.getByTitle("Settings"));
+
+      // Open the Shortcut accordion section
+      await user.click(screen.getByText("Recording Shortcut"));
 
       await waitFor(() => {
         expect(screen.getByText("⌘⇧Space")).toBeInTheDocument();
       });
     });
 
-    it("enters recording mode when Change button is clicked", async () => {
+    it("enters recording mode when shortcut display is clicked", async () => {
       const user = userEvent.setup();
       render(<App />);
 
@@ -355,74 +360,55 @@ it("updates status message after copying", async () => {
 
       await user.click(screen.getByTitle("Settings"));
 
+      // Open shortcut section
+      await user.click(screen.getByText("Recording Shortcut"));
+
       await waitFor(() => {
-        expect(screen.getByText("Change")).toBeInTheDocument();
+        expect(screen.getByText("Click to change")).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText("Change"));
+      // Click the shortcut display box to start recording
+      await user.click(screen.getByText("⌘⇧Space"));
 
-      expect(screen.getByPlaceholderText("Press thy keys...")).toBeInTheDocument();
-      expect(screen.getByText("Cease")).toBeInTheDocument();
+      expect(screen.getByText("Press keys...")).toBeInTheDocument();
     });
 
-    it("shows Cease button during recording mode", async () => {
+    it("shows recording text when shortcut display is clicked", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(screen.getByTitle("Settings"));
+
+      // Open shortcut section
+      await user.click(screen.getByText("Recording Shortcut"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Click to change")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("⌘⇧Space"));
+
+      // Should show recording prompt inline
+      expect(screen.getByText("Press keys...")).toBeInTheDocument();
+    });
+
+    it("returns to main view when back button is clicked", async () => {
       const user = userEvent.setup();
       render(<App />);
 
       await user.click(screen.getByTitle("Settings"));
 
       await waitFor(() => {
-        expect(screen.getByText("Change")).toBeInTheDocument();
+        expect(screen.getByTitle("Return")).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText("Change"));
-
-      // Should show recording input and Cease button
-      expect(screen.getByPlaceholderText("Press thy keys...")).toBeInTheDocument();
-      expect(screen.getByText("Cease")).toBeInTheDocument();
-    });
-
-    it("returns to main view when Return button is clicked", async () => {
-      const user = userEvent.setup();
-      render(<App />);
-
-      await user.click(screen.getByTitle("Settings"));
-
-      await waitFor(() => {
-        expect(screen.getByText("Return")).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByText("Return"));
+      await user.click(screen.getByTitle("Return"));
 
       // Should be back on main screen
-      expect(screen.getByText("Awaiting thy voice")).toBeInTheDocument();
+      expect(screen.getByText("Ready")).toBeInTheDocument();
     });
 
-    it("records shortcut on keyboard input", async () => {
-      const user = userEvent.setup();
-      render(<App />);
-
-      await user.click(screen.getByTitle("Settings"));
-
-      await waitFor(() => {
-        expect(screen.getByText("Change")).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByText("Change"));
-
-      // Verify input is shown
-      expect(screen.getByPlaceholderText("Press thy keys...")).toBeInTheDocument();
-
-      // Simulate Cmd+K keydown
-      await user.keyboard("{Meta>}k{/Meta}");
-
-      await waitFor(() => {
-        // After keys released, should show pending shortcut with Inscribe button
-        expect(screen.queryByText("Inscribe")).toBeInTheDocument();
-      });
-    });
-
-    it("saves shortcut when Inscribe button is clicked", async () => {
+    it("auto-saves shortcut on key release", async () => {
       const user = userEvent.setup();
       mockedInvoke.mockImplementation((cmd: string, args?: unknown) => {
         if (cmd === "get_transcription") return Promise.resolve("");
@@ -478,25 +464,43 @@ it("updates status message after copying", async () => {
 
       await user.click(screen.getByTitle("Settings"));
 
-      await waitFor(() => {
-        expect(screen.getByText("Change")).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByText("Change"));
-
-      // Type the shortcut
-      await user.keyboard("{Meta>}k{/Meta}");
+      // Open shortcut section
+      await user.click(screen.getByText("Recording Shortcut"));
 
       await waitFor(() => {
-        expect(screen.queryByText("Inscribe")).toBeInTheDocument();
+        expect(screen.getByText("Click to change")).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText("Inscribe"));
+      // Click to start recording
+      await user.click(screen.getByText("⌘⇧Space"));
 
-      expect(mockedInvoke).toHaveBeenCalledWith("set_shortcut", {
-        modifiers: expect.any(Array),
-        key: "k",
+      // Simulate Cmd+K keydown then release
+      const shortcutBox = document.querySelector(".shortcut-clickable")!;
+      fireEvent.keyDown(shortcutBox, { code: "MetaLeft", key: "Meta", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false });
+      fireEvent.keyDown(shortcutBox, { code: "KeyK", key: "k", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false });
+      fireEvent.keyUp(shortcutBox, { code: "KeyK", key: "k", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false });
+      fireEvent.keyUp(shortcutBox, { code: "MetaLeft", key: "Meta", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false });
+
+      // Auto-save should trigger set_shortcut
+      await waitFor(() => {
+        expect(mockedInvoke).toHaveBeenCalledWith("set_shortcut", {
+          modifiers: expect.any(Array),
+          key: "k",
+        });
       });
+    });
+
+    it("resizes window when opening and closing settings", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(screen.getByTitle("Settings"));
+
+      expect(mockedInvoke).toHaveBeenCalledWith("resize_window", { height: 520 });
+
+      await user.click(screen.getByTitle("Return"));
+
+      expect(mockedInvoke).toHaveBeenCalledWith("resize_window", { height: 340 });
     });
   });
 });
