@@ -35,6 +35,14 @@ pub fn get_frontmost_app() -> Result<String, String> {
 
 /// Activate an application by its bundle identifier
 pub fn activate_app(bundle_id: &str) -> Result<(), String> {
+    activate_app_fast(bundle_id)?;
+    // Give the app a moment to come to front before pasting
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    Ok(())
+}
+
+/// Activate an application without waiting — use when restoring focus, not before pasting
+pub fn activate_app_fast(bundle_id: &str) -> Result<(), String> {
     let script = format!(
         r#"tell application id "{}" to activate"#,
         bundle_id
@@ -50,8 +58,6 @@ pub fn activate_app(bundle_id: &str) -> Result<(), String> {
         return Err(format!("AppleScript error: {}", String::from_utf8_lossy(&output.stderr)));
     }
 
-    // Give the app a moment to come to front
-    std::thread::sleep(std::time::Duration::from_millis(50));
     Ok(())
 }
 

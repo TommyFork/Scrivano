@@ -33,7 +33,7 @@ impl RecordingHandle {
 pub fn start_recording() -> Result<RecordingHandle, String> {
     let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) =
         mpsc::channel();
-    let audio_levels: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.2; 5]));
+    let audio_levels: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.2; 3]));
     let audio_levels_clone = Arc::clone(&audio_levels);
 
     thread::spawn(move || {
@@ -231,23 +231,23 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
     }
 }
 
-/// Compute 5 audio level bars from recent samples
+/// Compute 3 audio level bars from recent samples
 /// Each bar represents a different frequency-ish band (simulated via sample position)
 fn update_audio_levels(samples: &[f32], audio_levels: &Arc<Mutex<Vec<f32>>>) {
     if samples.is_empty() {
         return;
     }
 
-    let chunk_size = samples.len() / 5;
+    let chunk_size = samples.len() / 3;
     if chunk_size == 0 {
         return;
     }
 
-    let mut levels = Vec::with_capacity(5);
+    let mut levels = Vec::with_capacity(3);
 
-    for i in 0..5 {
+    for i in 0..3 {
         let start = i * chunk_size;
-        let end = if i == 4 {
+        let end = if i == 2 {
             samples.len()
         } else {
             (i + 1) * chunk_size

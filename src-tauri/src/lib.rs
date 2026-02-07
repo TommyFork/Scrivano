@@ -178,26 +178,24 @@ fn show_window_at_position(window: &tauri::WebviewWindow, x: i32, y: i32) {
     let _ = window.set_focus();
 }
 
-fn create_indicator_window(app: &AppHandle, x: i32, y: i32, is_caret: bool) -> Option<tauri::WebviewWindow> {
-    // Close existing indicator window if any
-    if let Some(existing) = app.get_webview_window("indicator") {
-        let _ = existing.close();
-    }
-
-    // Indicator dimensions
-    let width: i32 = 60;
+/// Create or reuse the indicator window at the mouse cursor position.
+/// Returns (window, is_new_window). When is_new_window is false, the
+/// existing window was repositioned and the ready handshake can be skipped.
+fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bool) {
+    let width: i32 = 36;
     let height: i32 = 36;
 
-    // Position relative to the reference point.
-    // If caret: place just to the right and slightly above.
-    // If mouse fallback: place above and to the right.
-    let (mut pos_x, mut pos_y) = if is_caret {
-        (x + 4, y - height)
+    let (mx, my) = cursor::get_mouse_position().unwrap_or((100, 100));
+
+    // Place above-right of mouse cursor
+    let mut pos_x = mx + 8;
+    let mut pos_y = if my - height - 12 >= 4 {
+        my - height - 12
     } else {
-        (x + 10, y - 45)
+        my + 4
     };
 
-    // Clamp to screen bounds so the indicator is always visible
+    // Clamp to screen bounds
     #[cfg(target_os = "macos")]
     {
         use core_graphics::display::CGDisplay;
@@ -207,6 +205,14 @@ fn create_indicator_window(app: &AppHandle, x: i32, y: i32, is_caret: bool) -> O
 
         pos_x = pos_x.max(4).min(screen_w - width - 4);
         pos_y = pos_y.max(4).min(screen_h - height - 4);
+    }
+
+    // Reuse existing indicator window if it exists (avoids destroy/create race)
+    if let Some(existing) = app.get_webview_window("indicator") {
+        let _ = existing.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(pos_x, pos_y)));
+        let _ = existing.show();
+        let _ = app.emit("indicator-state", "recording");
+        return (Some(existing), false);
     }
 
     let url = WebviewUrl::App("indicator.html".into());
@@ -225,17 +231,17 @@ fn create_indicator_window(app: &AppHandle, x: i32, y: i32, is_caret: bool) -> O
         .visible(true)
         .build()
     {
-        Ok(window) => Some(window),
+        Ok(window) => (Some(window), true),
         Err(e) => {
             eprintln!("Failed to create indicator window: {}", e);
-            None
+            (None, false)
         }
     }
 }
 
 fn hide_indicator_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("indicator") {
-        let _ = window.close();
+        let _ = window.destroy();
     }
 }
 
@@ -244,15 +250,29 @@ async fn handle_recording_stop(
     audio_path: std::path::PathBuf,
     original_app: Option<String>,
 ) {
-    // Update indicator to processing state
-    let _ = app.emit("indicator-state", "processing");
+    // Helper: check if a NEW recording is in progress (our indicator may have been reused).
+    // When true, we must not modify the indicator or paste — the user is re-recording.
+    let new_recording_active = || -> bool {
+        app.state::<Mutex<AppState>>()
+            .lock()
+            .unwrap()
+            .is_recording
+    };
+
+    // Update indicator to processing state (only if no new recording started)
+    if !new_recording_active() {
+        eprintln!("[Scrivano] Emitting indicator-state: processing");
+        let _ = app.emit("indicator-state", "processing");
+    }
 
     let api_key = match get_api_key() {
         Ok(key) => key,
         Err(e) => {
             eprintln!("API key error: {}", e);
             let _ = app.emit("error", e);
-            hide_indicator_window(&app);
+            if !new_recording_active() {
+                hide_indicator_window(&app);
+            }
             return;
         }
     };
@@ -273,28 +293,31 @@ async fn handle_recording_stop(
                 .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
-            // Show success briefly
-            let _ = app.emit("indicator-state", "success");
+            // Only hide indicator and paste if no new recording started
+            if !new_recording_active() {
+                hide_indicator_window(&app);
 
-            // Hide indicator first, then paste to original app
-            hide_indicator_window(&app);
+                // Paste to the original app (this will re-activate it)
+                let paste_result = if let Some(ref bundle_id) = original_app {
+                    paste::paste_to_app(&text, bundle_id)
+                } else {
+                    paste::set_clipboard_and_paste(&text)
+                };
 
-            // Paste to the original app (this will re-activate it)
-            let paste_result = if let Some(ref bundle_id) = original_app {
-                paste::paste_to_app(&text, bundle_id)
+                if let Err(e) = paste_result {
+                    eprintln!("Failed to paste: {}", e);
+                    let _ = app.emit("error", format!("Failed to paste: {}", e));
+                }
             } else {
-                paste::set_clipboard_and_paste(&text)
-            };
-
-            if let Err(e) = paste_result {
-                eprintln!("Failed to paste: {}", e);
-                let _ = app.emit("error", format!("Failed to paste: {}", e));
+                eprintln!("[Scrivano] Skipping paste — new recording in progress");
             }
         }
         Err(e) => {
             eprintln!("Transcription failed: {}", e);
             let _ = app.emit("error", format!("Transcription failed: {}", e));
-            hide_indicator_window(&app);
+            if !new_recording_active() {
+                hide_indicator_window(&app);
+            }
         }
     }
 
@@ -420,25 +443,28 @@ pub fn run() {
 
                         match event.state() {
                             ShortcutState::Pressed => {
-                                // Save the frontmost app BEFORE we do anything that might steal focus
-                                let original_app = paste::get_frontmost_app().ok();
+                                // Save the frontmost app for later focus restoration.
+                                let original_app = cursor::get_frontmost_bundle_id();
 
                                 match audio::start_recording() {
                                     Ok(handle) => {
-                                        // Get cursor position for indicator placement
-                                        let (cursor_x, cursor_y, is_caret) =
-                                            match cursor::get_cursor_position() {
-                                                Ok(pos) => (pos.x, pos.y, pos.is_caret),
-                                                Err(_) => (100, 100, false),
-                                            };
 
-                                        // Create indicator window at cursor position
-                                        let _ = create_indicator_window(app, cursor_x, cursor_y, is_caret);
+                                        // Create or reuse indicator window at mouse position.
+                                        // If reused, listeners are already mounted (skip ready handshake).
+                                        let (_indicator_window, is_new_window) = create_indicator_window(app);
+
+                                        // Register the ready listener BEFORE the window can emit.
+                                        // If reusing, mark ready immediately — the window is already live.
+                                        let ready = Arc::new(AtomicBool::new(!is_new_window));
+                                        let ready_clone = Arc::clone(&ready);
+                                        let listener_id = app.listen("indicator-ready", move |_| {
+                                            ready_clone.store(true, Ordering::Relaxed);
+                                        });
 
                                         // Immediately re-activate the original app so focus isn't stolen.
-                                        // The indicator stays visible because always_on_top is set.
+                                        // Use the fast variant (no 50ms sleep) since we're not pasting.
                                         if let Some(ref bundle_id) = original_app {
-                                            let _ = paste::activate_app(bundle_id);
+                                            let _ = paste::activate_app_fast(bundle_id);
                                         }
 
                                         // Get the audio levels Arc before storing the handle
@@ -457,21 +483,21 @@ pub fn run() {
                                         // Wait for the indicator window to signal it's ready
                                         // before emitting events, with a timeout fallback.
                                         let app_clone = app.clone();
-                                        let ready = Arc::new(AtomicBool::new(false));
-                                        let ready_clone = Arc::clone(&ready);
-                                        let listener_id = app.listen("indicator-ready", move |_| {
-                                            ready_clone.store(true, Ordering::Relaxed);
-                                        });
 
                                         let app_for_unlisten = app.clone();
                                         std::thread::spawn(move || {
-                                            // Wait up to 2s for indicator to signal ready
+                                            // Wait up to 3s for indicator to signal ready
                                             let start = std::time::Instant::now();
                                             while !ready.load(Ordering::Relaxed)
-                                                && start.elapsed().as_millis() < 2000
+                                                && start.elapsed().as_millis() < 3000
                                                 && !stop_flag.load(Ordering::Relaxed)
                                             {
                                                 std::thread::sleep(std::time::Duration::from_millis(20));
+                                            }
+                                            if ready.load(Ordering::Relaxed) {
+                                                eprintln!("[Scrivano] Indicator signaled ready after {}ms", start.elapsed().as_millis());
+                                            } else {
+                                                eprintln!("[Scrivano] Indicator ready timeout after {}ms", start.elapsed().as_millis());
                                             }
                                             app_for_unlisten.unlisten(listener_id);
 

@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import "./Indicator.css";
 
-type IndicatorState = "recording" | "processing" | "success";
+type IndicatorState = "recording" | "processing";
 
 function Indicator() {
   const [state, setState] = useState<IndicatorState>("recording");
-  const [audioLevels, setAudioLevels] = useState<number[]>([0.2, 0.3, 0.2, 0.3, 0.2]);
+  const [audioLevels, setAudioLevels] = useState<number[]>([0.2, 0.3, 0.2]);
 
   useEffect(() => {
     const unlisteners = [
@@ -29,7 +29,7 @@ function Indicator() {
   }, []);
 
   return (
-    <div className={`indicator-container ${state}`}>
+    <div className="indicator-circle">
       {state === "recording" && (
         <div className="audio-bars">
           {audioLevels.map((level, i) => (
@@ -37,22 +37,13 @@ function Indicator() {
               key={i}
               className="audio-bar"
               style={{
-                height: `${Math.max(20, Math.min(100, level * 100))}%`,
+                height: `${Math.max(15, Math.min(100, level * 100))}%`,
               }}
             />
           ))}
         </div>
       )}
-      {state === "processing" && (
-        <div className="processing-dots">
-          <span className="dot" />
-          <span className="dot" />
-          <span className="dot" />
-        </div>
-      )}
-      {state === "success" && (
-        <div className="success-check">✓</div>
-      )}
+      {state === "processing" && <div className="spinner" />}
     </div>
   );
 }
