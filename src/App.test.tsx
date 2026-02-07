@@ -13,7 +13,42 @@ describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default mock implementations
-    mockedInvoke.mockResolvedValue("");
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_api_key_status")
+        return Promise.resolve({
+          openai_configured: true,
+          groq_configured: false,
+          openai_source: "keychain",
+          groq_source: null,
+        });
+      if (cmd === "get_available_providers")
+        return Promise.resolve([
+          {
+            id: "openai",
+            name: "OpenAI Whisper",
+            model: "whisper-1",
+            available: true,
+          },
+          {
+            id: "groq",
+            name: "Groq Whisper",
+            model: "whisper-large-v3-turbo",
+            available: false,
+          },
+        ]);
+      if (cmd === "get_transcription_settings")
+        return Promise.resolve({
+          provider: "openai",
+          model: "whisper-1",
+        });
+      if (cmd === "get_shortcut")
+        return Promise.resolve({
+          modifiers: ["super", "shift"],
+          key: "space",
+          display: "⌘⇧Space",
+        });
+      return Promise.resolve("");
+    });
     mockedListen.mockResolvedValue(() => {});
   });
 
@@ -250,6 +285,33 @@ it("updates status message after copying", async () => {
             key: "space",
             display: "⌘⇧Space",
           });
+        if (cmd === "get_api_key_status")
+          return Promise.resolve({
+            openai_configured: true,
+            groq_configured: false,
+            openai_source: "keychain",
+            groq_source: null,
+          });
+        if (cmd === "get_available_providers")
+          return Promise.resolve([
+            {
+              id: "openai",
+              name: "OpenAI Whisper",
+              model: "whisper-1",
+              available: true,
+            },
+            {
+              id: "groq",
+              name: "Groq Whisper",
+              model: "whisper-large-v3-turbo",
+              available: false,
+            },
+          ]);
+        if (cmd === "get_transcription_settings")
+          return Promise.resolve({
+            provider: "openai",
+            model: "whisper-1",
+          });
         return Promise.resolve("");
       });
     });
@@ -370,6 +432,33 @@ it("updates status message after copying", async () => {
             modifiers: ["super", "shift"],
             key: "space",
             display: "⌘⇧Space",
+          });
+        if (cmd === "get_api_key_status")
+          return Promise.resolve({
+            openai_configured: true,
+            groq_configured: false,
+            openai_source: "keychain",
+            groq_source: null,
+          });
+        if (cmd === "get_available_providers")
+          return Promise.resolve([
+            {
+              id: "openai",
+              name: "OpenAI Whisper",
+              model: "whisper-1",
+              available: true,
+            },
+            {
+              id: "groq",
+              name: "Groq Whisper",
+              model: "whisper-large-v3-turbo",
+              available: false,
+            },
+          ]);
+        if (cmd === "get_transcription_settings")
+          return Promise.resolve({
+            provider: "openai",
+            model: "whisper-1",
           });
         if (cmd === "set_shortcut") {
           const { modifiers, key } = args as {

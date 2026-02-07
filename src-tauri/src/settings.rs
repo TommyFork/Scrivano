@@ -17,17 +17,12 @@ impl Default for ShortcutConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TranscriptionProvider {
+    #[default]
     OpenAI,
     Groq,
-}
-
-impl Default for TranscriptionProvider {
-    fn default() -> Self {
-        Self::OpenAI
-    }
 }
 
 // API keys are now stored securely in the OS keychain.
@@ -266,4 +261,3 @@ pub fn get_endpoint_for_provider(provider: &TranscriptionProvider) -> &'static s
         TranscriptionProvider::Groq => "https://api.groq.com/openai/v1/audio/transcriptions",
     }
 }
-

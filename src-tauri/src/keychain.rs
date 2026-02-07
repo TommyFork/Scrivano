@@ -3,7 +3,8 @@ use keyring::Entry;
 const SERVICE_NAME: &str = "scrivano";
 
 fn get_entry(provider: &str) -> Result<Entry, String> {
-    Entry::new(SERVICE_NAME, provider).map_err(|e| format!("Failed to create keychain entry: {}", e))
+    Entry::new(SERVICE_NAME, provider)
+        .map_err(|e| format!("Failed to create keychain entry: {}", e))
 }
 
 pub fn store_api_key(provider: &str, api_key: &str) -> Result<(), String> {
