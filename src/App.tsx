@@ -97,6 +97,9 @@ function App() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings | null>(null);
 
+  // Open on Login state
+  const [openOnLogin, setOpenOnLogin] = useState(false);
+
   // Keep ref in sync with state
   useEffect(() => {
     showSettingsRef.current = showSettings;
@@ -111,6 +114,7 @@ function App() {
     invoke<ApiKeyStatus>("get_api_key_status").then(setApiKeyStatus);
     invoke<ProviderInfo[]>("get_available_providers").then(setProviders);
     invoke<TranscriptionSettings>("get_transcription_settings").then(setTranscriptionSettings);
+    invoke<boolean>("get_open_on_login").then(setOpenOnLogin).catch(() => {});
 
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
@@ -381,6 +385,16 @@ function App() {
     }
   };
 
+  const handleOpenOnLoginToggle = async () => {
+    try {
+      const result = await invoke<boolean>("set_open_on_login", { enabled: !openOnLogin });
+      setOpenOnLogin(result);
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -640,6 +654,18 @@ function App() {
               )}
             </div>
           </CollapsibleSection>
+        </div>
+
+        <div className="open-on-login-row">
+          <span className="open-on-login-label">Open on Login</span>
+          <button
+            className={`toggle-switch ${openOnLogin ? "active" : ""}`}
+            onClick={handleOpenOnLoginToggle}
+            role="switch"
+            aria-checked={openOnLogin}
+          >
+            <span className="toggle-knob" />
+          </button>
         </div>
 
         <div className="hint">Settings</div>

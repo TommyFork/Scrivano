@@ -1096,6 +1096,60 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   OPEN ON LOGIN TOGGLE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.open-on-login-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 0 4px;
+}
+
+.open-on-login-label {
+  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-sepia);
+  letter-spacing: 1px;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: 2px solid var(--ink-faded);
+  background: var(--parchment-dark);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.toggle-switch.active {
+  background: var(--verdigris);
+  border-color: var(--verdigris);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vellum);
+  box-shadow: 0 1px 3px rgba(44, 24, 16, 0.3);
+  transition: transform 0.3s ease;
+}
+
+.toggle-switch.active .toggle-knob {
+  transform: translateX(18px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    DARK MODE - API KEYS & MODEL SELECTOR
    ═══════════════════════════════════════════════════════════════════════════ */
 

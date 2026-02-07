@@ -17,6 +17,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -334,6 +335,34 @@ fn set_transcription_provider(
 }
 
 // ============================================================================
+// Autostart Commands
+// ============================================================================
+
+#[tauri::command]
+fn get_open_on_login(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+#[tauri::command]
+fn set_open_on_login(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let autolaunch = app.autolaunch();
+    if enabled {
+        autolaunch
+            .enable()
+            .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+    } else {
+        autolaunch
+            .disable()
+            .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+    }
+    autolaunch
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+// ============================================================================
 // Window and Recording Helpers
 // ============================================================================
 
@@ -523,6 +552,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(Mutex::new(AppState::default()))
         .manage(Mutex::new(RecorderState {
             handle: None,
@@ -797,6 +830,8 @@ pub fn run() {
             get_available_providers,
             get_transcription_settings,
             set_transcription_provider,
+            get_open_on_login,
+            set_open_on_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
