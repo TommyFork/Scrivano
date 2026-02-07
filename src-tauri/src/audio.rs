@@ -1,6 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -30,14 +31,52 @@ impl RecordingHandle {
     }
 }
 
-pub fn start_recording() -> Result<RecordingHandle, String> {
+/// List all available audio input device names.
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    let mut names = Vec::new();
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
+            if let Ok(name) = device.name() {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+/// Get the default input device name, if any.
+pub fn default_input_device_name() -> Option<String> {
+    let host = cpal::default_host();
+    host.default_input_device().and_then(|d| d.name().ok())
+}
+
+/// Find an input device by name, falling back to the default.
+fn find_input_device(device_name: Option<&str>) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    if let Some(name) = device_name {
+        if let Ok(devices) = host.input_devices() {
+            for device in devices {
+                if let Ok(n) = device.name() {
+                    if n == name {
+                        return Some(device);
+                    }
+                }
+            }
+        }
+    }
+    host.default_input_device()
+}
+
+pub fn start_recording(device_name: Option<&str>) -> Result<RecordingHandle, String> {
     let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) =
         mpsc::channel();
     let audio_levels: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.2; 3]));
     let audio_levels_clone = Arc::clone(&audio_levels);
 
+    let device_name_owned = device_name.map(|s| s.to_string());
     thread::spawn(move || {
-        run_recording(command_receiver, audio_levels_clone);
+        run_recording(command_receiver, audio_levels_clone, device_name_owned.as_deref());
     });
 
     Ok(RecordingHandle {
@@ -46,9 +85,8 @@ pub fn start_recording() -> Result<RecordingHandle, String> {
     })
 }
 
-fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc<Mutex<Vec<f32>>>) {
-    let host = cpal::default_host();
-    let device = match host.default_input_device() {
+fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc<Mutex<Vec<f32>>>, device_name: Option<&str>) {
+    let device = match find_input_device(device_name) {
         Some(d) => d,
         None => {
             if let Ok(RecordingCommand::Stop(sender)) = command_receiver.recv() {
@@ -228,6 +266,101 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
 
         let _ = sender.send(result);
     }
+}
+
+/// Handle for a running audio preview that monitors input levels.
+pub struct AudioPreviewHandle {
+    stop_flag: Arc<AtomicBool>,
+}
+
+impl AudioPreviewHandle {
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Start an audio preview that streams level data to the provided callback.
+/// Returns a handle that can be used to stop the preview.
+pub fn start_preview(
+    device_name: Option<&str>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+) -> Result<AudioPreviewHandle, String> {
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_flag_clone = Arc::clone(&stop_flag);
+
+    let device = find_input_device(device_name)
+        .ok_or_else(|| "No input device available".to_string())?;
+
+    let config = device
+        .default_input_config()
+        .map_err(|e| format!("Failed to get input config: {}", e))?;
+
+    let channels = config.channels();
+    let level_window: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let stream = {
+        let level_window_clone = Arc::clone(&level_window);
+        let audio_levels_clone = Arc::clone(&audio_levels);
+
+        match config.sample_format() {
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                &config.into(),
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    let mut lw = level_window_clone.lock().unwrap();
+                    for chunk in data.chunks(channels as usize) {
+                        let mono = chunk.iter().sum::<f32>() / chunk.len() as f32;
+                        lw.push(mono.abs());
+                        if lw.len() >= 512 {
+                            update_audio_levels(&lw, &audio_levels_clone);
+                            lw.clear();
+                        }
+                    }
+                },
+                |err| eprintln!("Audio preview stream error: {}", err),
+                None,
+            ),
+            cpal::SampleFormat::I16 => {
+                let level_window_clone2 = Arc::clone(&level_window);
+                let audio_levels_clone2 = Arc::clone(&audio_levels);
+                device.build_input_stream(
+                    &config.into(),
+                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                        let mut lw = level_window_clone2.lock().unwrap();
+                        for chunk in data.chunks(channels as usize) {
+                            let mono: f32 = chunk
+                                .iter()
+                                .map(|&s| s as f32 / i16::MAX as f32)
+                                .sum::<f32>()
+                                / chunk.len() as f32;
+                            lw.push(mono.abs());
+                            if lw.len() >= 512 {
+                                update_audio_levels(&lw, &audio_levels_clone2);
+                                lw.clear();
+                            }
+                        }
+                    },
+                    |err| eprintln!("Audio preview stream error: {}", err),
+                    None,
+                )
+            }
+            _ => return Err("Unsupported sample format".to_string()),
+        }
+    };
+
+    let stream = stream.map_err(|e| format!("Failed to build preview stream: {}", e))?;
+    stream
+        .play()
+        .map_err(|e| format!("Failed to start preview stream: {}", e))?;
+
+    // Keep the stream alive on a thread until stop is signaled
+    thread::spawn(move || {
+        while !stop_flag_clone.load(Ordering::Relaxed) {
+            thread::sleep(std::time::Duration::from_millis(50));
+        }
+        drop(stream);
+    });
+
+    Ok(AudioPreviewHandle { stop_flag })
 }
 
 /// Compute 3 audio level bars from recent samples

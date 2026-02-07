@@ -47,6 +47,12 @@ describe("App", () => {
           key: "space",
           display: "⌘⇧Space",
         });
+      if (cmd === "list_audio_input_devices")
+        return Promise.resolve([
+          { name: "Built-in Microphone", is_default: true },
+        ]);
+      if (cmd === "get_audio_input_device")
+        return Promise.resolve(null);
       return Promise.resolve("");
     });
     mockedListen.mockResolvedValue(() => {});
@@ -314,6 +320,12 @@ it("updates status message after copying", async () => {
             provider: "openai",
             model: "whisper-1",
           });
+        if (cmd === "list_audio_input_devices")
+          return Promise.resolve([
+            { name: "Built-in Microphone", is_default: true },
+          ]);
+        if (cmd === "get_audio_input_device")
+          return Promise.resolve(null);
         return Promise.resolve("");
       });
     });
@@ -446,6 +458,12 @@ it("updates status message after copying", async () => {
             provider: "openai",
             model: "whisper-1",
           });
+        if (cmd === "list_audio_input_devices")
+          return Promise.resolve([
+            { name: "Built-in Microphone", is_default: true },
+          ]);
+        if (cmd === "get_audio_input_device")
+          return Promise.resolve(null);
         if (cmd === "set_shortcut") {
           const { modifiers, key } = args as {
             modifiers: string[];
@@ -496,7 +514,7 @@ it("updates status message after copying", async () => {
 
       await user.click(screen.getByTitle("Settings"));
 
-      expect(mockedInvoke).toHaveBeenCalledWith("resize_window", { height: 520 });
+      expect(mockedInvoke).toHaveBeenCalledWith("resize_window", { height: 580 });
 
       await user.click(screen.getByTitle("Return"));
 

@@ -57,6 +57,8 @@ pub struct Settings {
     pub api_keys: ApiKeysConfig,
     #[serde(default)]
     pub transcription: TranscriptionConfig,
+    #[serde(default)]
+    pub audio_input_device: Option<String>,
 }
 
 fn get_settings_path() -> PathBuf {
