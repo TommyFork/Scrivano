@@ -191,9 +191,7 @@ mod tests {
         ];
 
         for (text, should_match) in test_cases {
-            let matches = hallucinations
-                .iter()
-                .any(|h| text.eq_ignore_ascii_case(h));
+            let matches = hallucinations.iter().any(|h| text.eq_ignore_ascii_case(h));
             assert_eq!(
                 matches, should_match,
                 "Text '{}' should_match={} but got matches={}",

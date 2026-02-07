@@ -290,7 +290,10 @@ mod tests {
         let settings = Settings::default();
         assert_eq!(settings.shortcut.modifiers, vec!["super", "shift"]);
         assert_eq!(settings.shortcut.key, "Space");
-        assert_eq!(settings.transcription.provider, TranscriptionProvider::OpenAI);
+        assert_eq!(
+            settings.transcription.provider,
+            TranscriptionProvider::OpenAI
+        );
     }
 
     #[test]

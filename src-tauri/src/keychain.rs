@@ -50,7 +50,11 @@ mod tests {
 
         let test_key = "test-api-key-12345";
         let result = store_api_key(TEST_PROVIDER, test_key);
-        assert!(result.is_ok(), "Failed to store API key: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to store API key: {:?}",
+            result.err()
+        );
 
         let retrieved = get_api_key(TEST_PROVIDER);
         assert_eq!(retrieved, Some(test_key.to_string()));
@@ -102,10 +106,7 @@ mod tests {
         assert_eq!(get_api_key(TEST_PROVIDER), Some("first-key".to_string()));
 
         store_api_key(TEST_PROVIDER, "second-key").unwrap();
-        assert_eq!(
-            get_api_key(TEST_PROVIDER),
-            Some("second-key".to_string())
-        );
+        assert_eq!(get_api_key(TEST_PROVIDER), Some("second-key".to_string()));
 
         cleanup_test_key();
     }
