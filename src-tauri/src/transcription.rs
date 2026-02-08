@@ -59,7 +59,11 @@ pub async fn transcribe_audio(request: TranscriptionRequest<'_>) -> Result<Strin
         if status == 401 {
             return Err("Invalid API key".to_string());
         }
-        return Err(format!("API error ({}): {}", status, body));
+        tracing::error!("API error ({}): {}", status, body);
+        return Err(format!(
+            "Transcription failed (HTTP {}). Check your API key and try again.",
+            status.as_u16()
+        ));
     }
 
     let whisper_response: WhisperResponse = response
@@ -80,10 +84,7 @@ pub async fn transcribe_audio(request: TranscriptionRequest<'_>) -> Result<Strin
         "subscribe.",
     ];
     if hallucinations.iter().any(|h| text.eq_ignore_ascii_case(h)) {
-        eprintln!(
-            "[Scrivano] Filtered likely Whisper hallucination: {:?}",
-            text
-        );
+        tracing::info!("Filtered likely Whisper hallucination: {:?}", text);
         return Err("No speech detected — hold the key longer and speak clearly".to_string());
     }
 

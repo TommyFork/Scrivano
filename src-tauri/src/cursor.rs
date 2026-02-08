@@ -182,9 +182,9 @@ pub fn prompt_accessibility_once() {
     }
     let granted = macos::prompt_accessibility_permission();
     if granted {
-        eprintln!("[Scrivano] Accessibility permission granted.");
+        tracing::info!("Accessibility permission granted.");
     } else {
-        eprintln!("[Scrivano] Accessibility permission not granted. Grant access in System Settings > Privacy & Security > Accessibility.");
+        tracing::warn!("Accessibility permission not granted. Grant access in System Settings > Privacy & Security > Accessibility.");
     }
 }
 
