@@ -20,6 +20,11 @@ mod macos {
         fn objc_msgSend(obj: *mut c_void, sel: *mut c_void) -> *mut c_void;
     }
 
+    /// Check if accessibility permission is already granted (no UI prompt).
+    pub fn is_accessibility_granted() -> bool {
+        unsafe { AXIsProcessTrustedWithOptions(ptr::null()) }
+    }
+
     /// Check accessibility and show the macOS system dialog if not granted.
     /// Should only be called once (e.g., at startup).
     pub fn prompt_accessibility_permission() -> bool {
@@ -58,6 +63,30 @@ mod macos {
                 CFRelease(dict);
             }
             result
+        }
+    }
+
+    /// Activate this app so windows can come to the foreground.
+    /// Required for Accessory apps (no dock icon) that launch via LaunchAgent.
+    pub fn activate_self() {
+        unsafe {
+            let cls = objc_getClass(c"NSApplication".as_ptr());
+            if cls.is_null() {
+                return;
+            }
+            let ns_app = objc_msgSend(cls, sel_registerName(c"sharedApplication".as_ptr()));
+            if ns_app.is_null() {
+                return;
+            }
+            // [NSApp activateIgnoringOtherApps:YES]
+            // Cast objc_msgSend to accept a BOOL (i8) argument
+            let send: extern "C" fn(*mut c_void, *mut c_void, i8) =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            send(
+                ns_app,
+                sel_registerName(c"activateIgnoringOtherApps:".as_ptr()),
+                1, // YES
+            );
         }
     }
 
@@ -109,6 +138,15 @@ mod macos {
     }
 }
 
+/// Activate this app so windows can come to the foreground.
+#[cfg(target_os = "macos")]
+pub fn activate_self() {
+    macos::activate_self();
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn activate_self() {}
+
 /// Get the bundle identifier of the frontmost application via NSWorkspace.
 #[cfg(target_os = "macos")]
 pub fn get_frontmost_bundle_id() -> Option<String> {
@@ -131,9 +169,13 @@ pub fn get_mouse_position() -> Option<(i32, i32)> {
     None
 }
 
-/// Prompt for accessibility permission once at startup.
+/// Prompt for accessibility permission once at startup, only if not already granted.
 #[cfg(target_os = "macos")]
 pub fn prompt_accessibility_once() {
+    if macos::is_accessibility_granted() {
+        eprintln!("[Scrivano] Accessibility permission already granted.");
+        return;
+    }
     let granted = macos::prompt_accessibility_permission();
     if granted {
         eprintln!("[Scrivano] Accessibility permission granted.");
