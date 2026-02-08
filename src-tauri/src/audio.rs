@@ -368,7 +368,7 @@ fn run_preview(
             cpal::SampleFormat::F32 => device.build_input_stream(
                 &config.into(),
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    let mut lw = level_window_clone.lock().unwrap();
+                    let mut lw = level_window_clone.lock();
                     for chunk in data.chunks(channels as usize) {
                         let mono = chunk.iter().sum::<f32>() / chunk.len() as f32;
                         push_level_sample(mono.abs(), &mut lw, &audio_levels_clone);
@@ -383,7 +383,7 @@ fn run_preview(
                 device.build_input_stream(
                     &config.into(),
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        let mut lw = level_window_clone2.lock().unwrap();
+                        let mut lw = level_window_clone2.lock();
                         for chunk in data.chunks(channels as usize) {
                             let mono: f32 = chunk
                                 .iter()

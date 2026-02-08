@@ -44,6 +44,7 @@ pub struct Settings {
     pub shortcut: ShortcutConfig,
     // Backwards compat: old settings files may contain "api_keys"; consumed but never written
     #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     pub api_keys: Option<serde_json::Value>,
     #[serde(default)]
     pub transcription: TranscriptionConfig,
@@ -454,6 +455,7 @@ mod tests {
             transcription: TranscriptionConfig {
                 provider: TranscriptionProvider::Groq,
             },
+            audio_input_device: None,
         };
         let json = serde_json::to_string(&original).unwrap();
         let restored: Settings = serde_json::from_str(&json).unwrap();
