@@ -90,6 +90,11 @@ fn hide_window(window: tauri::Window) {
 }
 
 #[tauri::command]
+fn set_prevent_auto_hide(prevent: bool, state: tauri::State<'_, Arc<AtomicBool>>) {
+    state.store(prevent, Ordering::Relaxed);
+}
+
+#[tauri::command]
 fn resize_window(app: AppHandle, height: f64) {
     if let Some(window) = app.get_webview_window("main") {
         let width = 320.0;
@@ -367,9 +372,7 @@ fn list_audio_input_devices() -> Vec<AudioDeviceInfo> {
 }
 
 #[tauri::command]
-fn get_audio_input_device(
-    state: tauri::State<'_, Mutex<SettingsState>>,
-) -> Option<String> {
+fn get_audio_input_device(state: tauri::State<'_, Mutex<SettingsState>>) -> Option<String> {
     state.lock().unwrap().settings.audio_input_device.clone()
 }
 
@@ -606,9 +609,20 @@ async fn handle_recording_stop(
                     paste::set_clipboard_and_paste(&text)
                 };
 
-                if let Err(e) = paste_result {
-                    eprintln!("Failed to paste: {}", e);
-                    let _ = app.emit("error", format!("Failed to paste: {}", e));
+                match &paste_result {
+                    Ok(()) => {
+                        let _ = app.emit(
+                            "paste",
+                            serde_json::json!({
+                                "text_length": text.len(),
+                                "target_app": original_app.as_deref().unwrap_or("unknown"),
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to paste: {}", e);
+                        let _ = app.emit("error", format!("Failed to paste: {}", e));
+                    }
                 }
             } else {
                 eprintln!("[Scrivano] Skipping paste — new recording in progress");
@@ -652,15 +666,20 @@ pub fn run() {
             levels: Arc::new(Mutex::new(vec![0.15; 3])),
             stop_polling: Arc::new(AtomicBool::new(false)),
         }))
+        .manage(Arc::new(AtomicBool::new(false)))
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
 
-            // Hide window when it loses focus (click outside)
+            // Hide window when it loses focus (click outside),
+            // unless auto-hide is suppressed (e.g. dev tools open).
+            let prevent_hide = app.state::<Arc<AtomicBool>>().inner().clone();
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        let _ = w.hide();
+                        if !prevent_hide.load(Ordering::Relaxed) {
+                            let _ = w.hide();
+                        }
                     }
                 });
             }
@@ -910,6 +929,7 @@ pub fn run() {
             copy_to_clipboard,
             paste_text,
             hide_window,
+            set_prevent_auto_hide,
             resize_window,
             get_shortcut,
             set_shortcut,

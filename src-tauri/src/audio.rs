@@ -94,7 +94,11 @@ pub fn start_recording(device_name: Option<&str>) -> Result<RecordingHandle, Str
 
     let device_name_owned = device_name.map(|s| s.to_string());
     thread::spawn(move || {
-        run_recording(command_receiver, audio_levels_clone, device_name_owned.as_deref());
+        run_recording(
+            command_receiver,
+            audio_levels_clone,
+            device_name_owned.as_deref(),
+        );
     });
 
     Ok(RecordingHandle {
@@ -103,7 +107,11 @@ pub fn start_recording(device_name: Option<&str>) -> Result<RecordingHandle, Str
     })
 }
 
-fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc<Mutex<Vec<f32>>>, device_name: Option<&str>) {
+fn run_recording(
+    command_receiver: Receiver<RecordingCommand>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+    device_name: Option<&str>,
+) {
     let device = match find_input_device(device_name) {
         Some(d) => d,
         None => {
