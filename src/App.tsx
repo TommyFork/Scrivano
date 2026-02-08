@@ -18,6 +18,14 @@ import type {
   SectionId,
 } from "./types";
 
+// Dev tools - only loaded in development builds
+const DevToolsModule = import.meta.env.DEV
+  ? await import("./DevTools").catch((err) => {
+      console.error("[DevTools] Failed to load:", err);
+      return null;
+    })
+  : null;
+
 const STATUS_DISPLAY_DURATION = 1500;
 const SETTINGS_HEIGHT = 520;
 const MAIN_HEIGHT = 340;
@@ -52,10 +60,19 @@ function App() {
     null,
   );
 
-  // Keep ref in sync with state
+  // Dev tools state (only used in dev mode)
+  const [showDevTools, setShowDevTools] = useState(false);
+  const showDevToolsRef = useRef(false);
+  const devEventLog = DevToolsModule?.useEventLog();
+
+  // Keep refs in sync with state
   useEffect(() => {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
+
+  useEffect(() => {
+    showDevToolsRef.current = showDevTools;
+  }, [showDevTools]);
 
   useEffect(() => {
     invoke<string>("get_transcription").then((t) => {
@@ -91,6 +108,8 @@ function App() {
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
+      } else if (showDevToolsRef.current) {
+        // Dev tools open: keep window as-is so devs can inspect while unfocused
       } else if (showSettingsRef.current) {
         // Window lost focus while settings open: discard and reset
         setShowSettings(false);
@@ -348,6 +367,15 @@ function App() {
             &#x2190;
           </button>
           <span className="status-text">Configuration</span>
+          {import.meta.env.DEV && (
+            <button
+              className="dev-badge"
+              onClick={() => setShowDevTools(true)}
+              title="Open Dev Tools"
+            >
+              DEV
+            </button>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}
@@ -470,6 +498,24 @@ function App() {
         </div>
 
         <div className="hint">Settings</div>
+
+        {import.meta.env.DEV && DevToolsModule && devEventLog && (
+          <DevToolsModule.DevTools
+            isOpen={showDevTools}
+            onClose={() => setShowDevTools(false)}
+            eventLog={devEventLog.eventLog}
+            onClearLog={devEventLog.clearLog}
+            appState={{
+              isRecording,
+              status,
+              textLength: text.length,
+              hasApiKey: !!hasAnyApiKey,
+              provider: transcriptionSettings?.provider ?? null,
+              shortcut: currentShortcut?.display ?? null,
+              error,
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -483,6 +529,15 @@ function App() {
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>
+        {import.meta.env.DEV && (
+          <button
+            className="dev-badge"
+            onClick={() => setShowDevTools(true)}
+            title="Open Dev Tools"
+          >
+            DEV
+          </button>
+        )}
         <button className="settings-btn" onClick={openSettings} title="Settings">
           &#x2699;
         </button>
@@ -528,6 +583,24 @@ function App() {
             </div>
           )}
         </>
+      )}
+
+      {import.meta.env.DEV && DevToolsModule && devEventLog && (
+        <DevToolsModule.DevTools
+          isOpen={showDevTools}
+          onClose={() => setShowDevTools(false)}
+          eventLog={devEventLog.eventLog}
+          onClearLog={devEventLog.clearLog}
+          appState={{
+            isRecording,
+            status,
+            textLength: text.length,
+            hasApiKey: !!hasAnyApiKey,
+            provider: transcriptionSettings?.provider ?? null,
+            shortcut: currentShortcut?.display ?? null,
+            error,
+          }}
+        />
       )}
     </div>
   );
