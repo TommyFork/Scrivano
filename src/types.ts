@@ -7,8 +7,6 @@ export interface ShortcutInfo {
 export interface ApiKeyStatus {
   openai_configured: boolean;
   groq_configured: boolean;
-  openai_source: string | null;
-  groq_source: string | null;
 }
 
 export interface ProviderInfo {

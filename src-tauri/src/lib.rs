@@ -16,6 +16,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -220,25 +221,19 @@ struct ApiKeyStatus {
 }
 
 fn get_api_key_status_internal() -> ApiKeyStatus {
-    let openai_from_keychain = keychain::has_api_key("openai");
-    let openai_from_env = std::env::var("OPENAI_API_KEY").is_ok();
-    let groq_from_keychain = keychain::has_api_key("groq");
-    let groq_from_env = std::env::var("GROQ_API_KEY").is_ok();
+    let openai_configured = keychain::has_api_key("openai");
+    let groq_configured = keychain::has_api_key("groq");
 
     ApiKeyStatus {
-        openai_configured: openai_from_keychain || openai_from_env,
-        groq_configured: groq_from_keychain || groq_from_env,
-        openai_source: if openai_from_keychain {
+        openai_configured,
+        groq_configured,
+        openai_source: if openai_configured {
             Some("keychain".to_string())
-        } else if openai_from_env {
-            Some("env".to_string())
         } else {
             None
         },
-        groq_source: if groq_from_keychain {
+        groq_source: if groq_configured {
             Some("keychain".to_string())
-        } else if groq_from_env {
-            Some("env".to_string())
         } else {
             None
         },
@@ -450,6 +445,34 @@ fn stop_audio_preview(state: tauri::State<'_, Mutex<AudioPreviewState>>) {
 }
 
 // ============================================================================
+// Autostart Commands
+// ============================================================================
+
+#[tauri::command]
+fn get_open_on_login(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+#[tauri::command]
+fn set_open_on_login(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let autolaunch = app.autolaunch();
+    if enabled {
+        autolaunch
+            .enable()
+            .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+    } else {
+        autolaunch
+            .disable()
+            .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+    }
+    autolaunch
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+// ============================================================================
 // Window and Recording Helpers
 // ============================================================================
 
@@ -648,6 +671,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::AppleScript,
+            None,
+        ))
         .manage(Mutex::new(AppState::default()))
         .manage(Mutex::new(RecorderState {
             handle: None,
@@ -723,10 +750,16 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
+                                // Activate the app first — required for Accessory apps
+                                // (no dock icon) to bring windows to the foreground,
+                                // especially after auto-launch via LaunchAgent.
+                                cursor::activate_self();
+
                                 let (x, y, h) = match (&rect.position, &rect.size) {
                                     (tauri::Position::Physical(p), tauri::Size::Physical(s)) => {
                                         (p.x, p.y, s.height as i32)
@@ -943,6 +976,8 @@ pub fn run() {
             set_audio_input_device,
             start_audio_preview,
             stop_audio_preview,
+            get_open_on_login,
+            set_open_on_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
