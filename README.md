@@ -6,6 +6,10 @@
 </p>
 
 <p align="center">
+  <strong>macOS only</strong> — built exclusively for the Mac menu bar, Keychain, Accessibility APIs, and AppleScript ecosystem. Not available for Windows, Linux, iOS, or Android.
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/platform-macOS-blue" alt="macOS" />
   <img src="https://img.shields.io/badge/built_with-Tauri_2-orange" alt="Tauri 2" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
@@ -99,7 +103,9 @@ Scrivano needs three permissions to function:
 
 **Frontend**: React 19 + TypeScript + Vite (two windows — main popup and floating indicator)
 
-**Backend**: Tauri 2 + Rust — handles audio capture (`cpal`), WAV encoding (`hound`), Whisper API calls, clipboard/paste automation (AppleScript), keychain storage, and global shortcut management.
+**Backend**: Tauri 2 + Rust — handles audio capture (`cpal`), WAV encoding (`hound`), Whisper API calls, clipboard/paste automation (AppleScript), macOS Keychain storage, and global shortcut management.
+
+> **Why macOS only?** Scrivano is deeply integrated with macOS-specific APIs: menu bar tray (NSStatusItem via Tauri), Keychain for API key storage, Accessibility APIs for global hotkeys, AppleScript for paste automation and app activation, and Core Graphics for cursor tracking. These aren't portable to other platforms without fundamental redesign.
 
 ## License
 
