@@ -21,4 +21,9 @@ export interface TranscriptionSettings {
   model: string;
 }
 
-export type SectionId = "model" | "shortcut" | "apikeys";
+export interface AudioDeviceInfo {
+  name: string;
+  is_default: boolean;
+}
+
+export type SectionId = "model" | "shortcut" | "apikeys" | "audio";

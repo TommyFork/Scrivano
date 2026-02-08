@@ -5,7 +5,7 @@ mod paste;
 mod settings;
 mod transcription;
 
-use audio::RecordingHandle;
+use audio::{AudioPreviewHandle, RecordingHandle};
 use serde::{Deserialize, Serialize};
 use settings::{Settings, ShortcutConfig, TranscriptionProvider};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -396,6 +396,113 @@ fn set_transcription_provider(
 }
 
 // ============================================================================
+// Audio Input Device Commands
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Clone)]
+struct AudioDeviceInfo {
+    name: String,
+    is_default: bool,
+}
+
+struct AudioPreviewState {
+    handle: Option<AudioPreviewHandle>,
+    levels: Arc<Mutex<Vec<f32>>>,
+    stop_polling: Arc<AtomicBool>,
+}
+
+#[tauri::command]
+fn list_audio_input_devices() -> Vec<AudioDeviceInfo> {
+    let devices = audio::list_input_devices();
+    let default_name = audio::default_input_device_name();
+    devices
+        .into_iter()
+        .map(|name| AudioDeviceInfo {
+            is_default: default_name.as_deref() == Some(&name),
+            name,
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn get_audio_input_device(state: tauri::State<'_, Mutex<SettingsState>>) -> Option<String> {
+    state.lock().unwrap().settings.audio_input_device.clone()
+}
+
+#[tauri::command]
+fn set_audio_input_device(
+    device_name: Option<String>,
+    state: tauri::State<'_, Mutex<SettingsState>>,
+) -> Result<(), String> {
+    let mut state_guard = state.lock().unwrap();
+    state_guard.settings.audio_input_device = device_name;
+    settings::save_settings(&state_guard.settings)
+}
+
+#[tauri::command]
+fn start_audio_preview(
+    app: AppHandle,
+    state: tauri::State<'_, Mutex<AudioPreviewState>>,
+    settings_state: tauri::State<'_, Mutex<SettingsState>>,
+) -> Result<(), String> {
+    let device_name = settings_state
+        .lock()
+        .unwrap()
+        .settings
+        .audio_input_device
+        .clone();
+
+    let mut preview = state.lock().unwrap();
+
+    // Stop existing preview if any
+    if let Some(handle) = preview.handle.take() {
+        preview.stop_polling.store(true, Ordering::Relaxed);
+        handle.stop();
+    }
+
+    // Reset levels
+    {
+        let mut levels = preview.levels.lock().unwrap();
+        *levels = vec![0.15; 3];
+    }
+
+    let levels = Arc::clone(&preview.levels);
+    let handle = audio::start_preview(device_name.as_deref(), Arc::clone(&levels))?;
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    preview.stop_polling = Arc::clone(&stop_flag);
+    preview.handle = Some(handle);
+
+    // Start polling thread to emit preview levels
+    let levels_for_poll = Arc::clone(&levels);
+    std::thread::spawn(move || {
+        while !stop_flag.load(Ordering::Relaxed) {
+            let lvls = levels_for_poll.lock().unwrap().clone();
+            let _ = app.emit("audio-preview-levels", &lvls);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_audio_preview(state: tauri::State<'_, Mutex<AudioPreviewState>>) {
+    let mut preview = state.lock().unwrap();
+    preview.stop_polling.store(true, Ordering::Relaxed);
+    if let Some(handle) = preview.handle.take() {
+        handle.stop();
+    }
+    // Reset levels — clone the Arc first so we can drop the outer guard
+    let levels_arc = Arc::clone(&preview.levels);
+    drop(preview);
+    match levels_arc.lock() {
+        Ok(mut levels) => *levels = vec![0.15; 3],
+        Err(e) => eprintln!("[Scrivano] Failed to reset preview levels: {}", e),
+    };
+}
+
+// ============================================================================
 // Autostart Commands
 // ============================================================================
 
@@ -645,6 +752,11 @@ pub fn run() {
         .manage(Mutex::new(SettingsState {
             settings: loaded_settings,
         }))
+        .manage(Mutex::new(AudioPreviewState {
+            handle: None,
+            levels: Arc::new(Mutex::new(vec![0.15; 3])),
+            stop_polling: Arc::new(AtomicBool::new(false)),
+        }))
         .manage(Arc::new(AtomicBool::new(false)))
         .manage(Mutex::new(api_key_cache))
         .setup(move |app| {
@@ -767,7 +879,13 @@ pub fn run() {
                                 let original_app = cursor::get_frontmost_bundle_id()
                                     .filter(|id| id != own_bundle_id);
 
-                                match audio::start_recording() {
+                                let audio_device = {
+                                    let ss = app.state::<Mutex<SettingsState>>();
+                                    let guard = ss.lock().unwrap();
+                                    guard.settings.audio_input_device.clone()
+                                };
+
+                                match audio::start_recording(audio_device.as_deref()) {
                                     Ok(handle) => {
 
                                         // Create or reuse indicator window at mouse position.
@@ -918,6 +1036,11 @@ pub fn run() {
             get_available_providers,
             get_transcription_settings,
             set_transcription_provider,
+            list_audio_input_devices,
+            get_audio_input_device,
+            set_audio_input_device,
+            start_audio_preview,
+            stop_audio_preview,
             get_open_on_login,
             set_open_on_login,
         ])

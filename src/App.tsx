@@ -15,6 +15,7 @@ import type {
   ApiKeyStatus,
   ProviderInfo,
   TranscriptionSettings,
+  AudioDeviceInfo,
   SectionId,
 } from "./types";
 
@@ -27,7 +28,7 @@ const DevToolsModule = import.meta.env.DEV
   : null;
 
 const STATUS_DISPLAY_DURATION = 1500;
-const SETTINGS_HEIGHT = 520;
+const SETTINGS_HEIGHT = 580;
 const MAIN_HEIGHT = 340;
 
 function App() {
@@ -60,6 +61,13 @@ function App() {
     null,
   );
 
+  // Audio input device state
+  const [audioDevices, setAudioDevices] = useState<AudioDeviceInfo[]>([]);
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState<string | null>(null);
+  const [isPreviewActive, setIsPreviewActive] = useState(false);
+  const [previewLevels, setPreviewLevels] = useState<number[]>([0.15, 0.15, 0.15]);
+  const previewActiveRef = useRef(false);
+
   // Open on Login state
   const [openOnLogin, setOpenOnLogin] = useState(false);
   const suppressBlurRef = useRef(false);
@@ -87,6 +95,8 @@ function App() {
     invoke<ApiKeyStatus>("get_api_key_status").then(setApiKeyStatus);
     invoke<ProviderInfo[]>("get_available_providers").then(setProviders);
     invoke<TranscriptionSettings>("get_transcription_settings").then(setTranscriptionSettings);
+    invoke<AudioDeviceInfo[]>("list_audio_input_devices").then(setAudioDevices);
+    invoke<string | null>("get_audio_input_device").then(setSelectedAudioDevice);
     invoke<boolean>("get_open_on_login")
       .then(setOpenOnLogin)
       .catch(() => {});
@@ -106,6 +116,11 @@ function App() {
         setError(e.payload);
         setStatus("Error");
       }),
+      listen<number[]>("audio-preview-levels", (e) => {
+        if (previewActiveRef.current) {
+          setPreviewLevels(e.payload);
+        }
+      }),
     ];
 
     // Auto-focus textarea when window gains focus, reset settings on blur
@@ -124,6 +139,12 @@ function App() {
         setIsRecordingShortcutActive(false);
         setLiveDisplay("");
         setEditingProvider(null);
+        if (previewActiveRef.current) {
+          previewActiveRef.current = false;
+          setIsPreviewActive(false);
+          setPreviewLevels([0.15, 0.15, 0.15]);
+          invoke("stop_audio_preview").catch(() => {});
+        }
         invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
       }
     });
@@ -181,6 +202,12 @@ function App() {
     setIsRecordingShortcutActive(false);
     setLiveDisplay("");
     setEditingProvider(null);
+    if (previewActiveRef.current) {
+      previewActiveRef.current = false;
+      setIsPreviewActive(false);
+      setPreviewLevels([0.15, 0.15, 0.15]);
+      invoke("stop_audio_preview").catch(() => {});
+    }
     invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
   }, []);
 
@@ -360,6 +387,43 @@ function App() {
     }
   };
 
+  // ── Audio input device handlers ──
+
+  const handleAudioDeviceChange = async (deviceName: string | null) => {
+    try {
+      await invoke("set_audio_input_device", { deviceName });
+      setSelectedAudioDevice(deviceName);
+      // If preview is active, restart it with the new device
+      if (previewActiveRef.current) {
+        await invoke("stop_audio_preview");
+        await invoke("start_audio_preview");
+      }
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const toggleAudioPreview = async () => {
+    try {
+      if (previewActiveRef.current) {
+        previewActiveRef.current = false;
+        setIsPreviewActive(false);
+        setPreviewLevels([0.15, 0.15, 0.15]);
+        await invoke("stop_audio_preview");
+      } else {
+        previewActiveRef.current = true;
+        setIsPreviewActive(true);
+        await invoke("start_audio_preview");
+      }
+      setError("");
+    } catch (e) {
+      previewActiveRef.current = false;
+      setIsPreviewActive(false);
+      setError(String(e));
+    }
+  };
+
   const handleOpenOnLoginToggle = async () => {
     // Temporarily suppress the blur handler — macOS may briefly steal
     // focus while modifying the LaunchAgent plist, which would otherwise
@@ -479,6 +543,53 @@ function App() {
                   </span>
                   <span className="shortcut-change-hint">Click to change</span>
                 </>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          {/* ── Audio Input Section ── */}
+          <CollapsibleSection
+            id="audio"
+            title="Audio Input"
+            openSection={openSection}
+            onToggle={handleSectionToggle}
+          >
+            <p className="settings-description">Select a microphone for recording</p>
+            <div className="audio-device-select-wrapper">
+              <select
+                className="audio-device-select"
+                value={selectedAudioDevice ?? ""}
+                onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
+              >
+                <option value="">System Default</option>
+                {audioDevices.map((device) => (
+                  <option key={device.name} value={device.name}>
+                    {device.name}
+                    {device.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="audio-preview-section">
+              <div className="audio-preview-header">
+                <span className="audio-preview-label">Level Monitor</span>
+                <button className="btn small" onClick={toggleAudioPreview}>
+                  {isPreviewActive ? "Stop" : "Test"}
+                </button>
+              </div>
+              <div className="audio-level-meter">
+                {previewLevels.map((level, i) => (
+                  <div key={i} className="audio-level-bar-track">
+                    <div
+                      className={`audio-level-bar-fill ${isPreviewActive ? "active" : ""}`}
+                      style={{ width: `${(isPreviewActive ? level : 0.15) * 100}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+              {isPreviewActive && (
+                <p className="audio-preview-hint">Speak to see your audio levels</p>
               )}
             </div>
           </CollapsibleSection>

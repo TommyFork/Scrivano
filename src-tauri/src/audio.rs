@@ -1,6 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -30,14 +31,74 @@ impl RecordingHandle {
     }
 }
 
-pub fn start_recording() -> Result<RecordingHandle, String> {
+/// List all available audio input device names.
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    let mut names = Vec::new();
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
+            if let Ok(name) = device.name() {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+/// Get the default input device name, if any.
+pub fn default_input_device_name() -> Option<String> {
+    let host = cpal::default_host();
+    host.default_input_device().and_then(|d| d.name().ok())
+}
+
+/// Find an input device by name, falling back to the default.
+/// Logs a warning when a named device is not found.
+fn find_input_device(device_name: Option<&str>) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    if let Some(name) = device_name {
+        if let Ok(devices) = host.input_devices() {
+            for device in devices {
+                if let Ok(n) = device.name() {
+                    if n == name {
+                        return Some(device);
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "[Scrivano] Audio device '{}' not found, falling back to system default",
+            name
+        );
+    }
+    host.default_input_device()
+}
+
+/// Push a mono sample into the level window and flush to audio_levels when full.
+fn push_level_sample(
+    mono_abs: f32,
+    level_window: &mut Vec<f32>,
+    audio_levels: &Arc<Mutex<Vec<f32>>>,
+) {
+    level_window.push(mono_abs);
+    if level_window.len() >= 512 {
+        update_audio_levels(level_window, audio_levels);
+        level_window.clear();
+    }
+}
+
+pub fn start_recording(device_name: Option<&str>) -> Result<RecordingHandle, String> {
     let (command_sender, command_receiver): (Sender<RecordingCommand>, Receiver<RecordingCommand>) =
         mpsc::channel();
     let audio_levels: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.2; 3]));
     let audio_levels_clone = Arc::clone(&audio_levels);
 
+    let device_name_owned = device_name.map(|s| s.to_string());
     thread::spawn(move || {
-        run_recording(command_receiver, audio_levels_clone);
+        run_recording(
+            command_receiver,
+            audio_levels_clone,
+            device_name_owned.as_deref(),
+        );
     });
 
     Ok(RecordingHandle {
@@ -46,9 +107,12 @@ pub fn start_recording() -> Result<RecordingHandle, String> {
     })
 }
 
-fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc<Mutex<Vec<f32>>>) {
-    let host = cpal::default_host();
-    let device = match host.default_input_device() {
+fn run_recording(
+    command_receiver: Receiver<RecordingCommand>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+    device_name: Option<&str>,
+) {
+    let device = match find_input_device(device_name) {
         Some(d) => d,
         None => {
             if let Ok(RecordingCommand::Stop(sender)) = command_receiver.recv() {
@@ -85,12 +149,7 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
         audio_levels: &Arc<Mutex<Vec<f32>>>,
     ) {
         samples.push(mono);
-        level_window.push(mono.abs());
-        // Update audio levels periodically (every ~512 mono samples)
-        if level_window.len() >= 512 {
-            update_audio_levels(level_window, audio_levels);
-            level_window.clear();
-        }
+        push_level_sample(mono.abs(), level_window, audio_levels);
     }
 
     let stream = match config.sample_format() {
@@ -228,6 +287,138 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
 
         let _ = sender.send(result);
     }
+}
+
+/// Handle for a running audio preview that monitors input levels.
+pub struct AudioPreviewHandle {
+    stop_flag: Arc<AtomicBool>,
+}
+
+impl AudioPreviewHandle {
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Start an audio preview that streams level data to the provided callback.
+/// Returns a handle that can be used to stop the preview.
+pub fn start_preview(
+    device_name: Option<&str>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+) -> Result<AudioPreviewHandle, String> {
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_flag_clone = Arc::clone(&stop_flag);
+    let device_name_owned = device_name.map(|s| s.to_string());
+
+    // cpal Stream is !Send on macOS, so we must create and own it on one thread.
+    // Use a channel to report whether setup succeeded before entering the keep-alive loop.
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+
+    thread::spawn(move || {
+        run_preview(
+            device_name_owned.as_deref(),
+            audio_levels,
+            stop_flag_clone,
+            ready_tx,
+        );
+    });
+
+    ready_rx
+        .recv()
+        .map_err(|_| "Preview thread failed to start".to_string())?
+        .map(|_| AudioPreviewHandle { stop_flag })
+}
+
+fn run_preview(
+    device_name: Option<&str>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+    stop_flag: Arc<AtomicBool>,
+    ready_tx: Sender<Result<(), String>>,
+) {
+    let device = match find_input_device(device_name) {
+        Some(d) => d,
+        None => {
+            let _ = ready_tx.send(Err("No input device available".to_string()));
+            return;
+        }
+    };
+
+    let config = match device.default_input_config() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = ready_tx.send(Err(format!("Failed to get input config: {}", e)));
+            return;
+        }
+    };
+
+    let channels = config.channels();
+    let level_window: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let stream = {
+        let level_window_clone = Arc::clone(&level_window);
+        let audio_levels_clone = Arc::clone(&audio_levels);
+
+        match config.sample_format() {
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                &config.into(),
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    let mut lw = level_window_clone.lock().unwrap();
+                    for chunk in data.chunks(channels as usize) {
+                        let mono = chunk.iter().sum::<f32>() / chunk.len() as f32;
+                        push_level_sample(mono.abs(), &mut lw, &audio_levels_clone);
+                    }
+                },
+                |err| eprintln!("Audio preview stream error: {}", err),
+                None,
+            ),
+            cpal::SampleFormat::I16 => {
+                let level_window_clone2 = Arc::clone(&level_window);
+                let audio_levels_clone2 = Arc::clone(&audio_levels);
+                device.build_input_stream(
+                    &config.into(),
+                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                        let mut lw = level_window_clone2.lock().unwrap();
+                        for chunk in data.chunks(channels as usize) {
+                            let mono: f32 = chunk
+                                .iter()
+                                .map(|&s| s as f32 / i16::MAX as f32)
+                                .sum::<f32>()
+                                / chunk.len() as f32;
+                            push_level_sample(mono.abs(), &mut lw, &audio_levels_clone2);
+                        }
+                    },
+                    |err| eprintln!("Audio preview stream error: {}", err),
+                    None,
+                )
+            }
+            _ => {
+                let _ = ready_tx.send(Err("Unsupported sample format".to_string()));
+                return;
+            }
+        }
+    };
+
+    let stream = match stream {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ready_tx.send(Err(format!("Failed to build preview stream: {}", e)));
+            return;
+        }
+    };
+
+    if let Err(e) = stream.play() {
+        let _ = ready_tx.send(Err(format!("Failed to start preview stream: {}", e)));
+        return;
+    }
+
+    // Signal success — stream is running
+    let _ = ready_tx.send(Ok(()));
+
+    // Keep the stream alive until stop is signaled
+    while !stop_flag.load(Ordering::Relaxed) {
+        thread::sleep(std::time::Duration::from_millis(50));
+    }
+    drop(stream);
 }
 
 /// Compute 3 audio level bars from recent samples
