@@ -19,7 +19,12 @@ import type {
 } from "./types";
 
 // Dev tools - only loaded in development builds
-const DevToolsModule = import.meta.env.DEV ? await import("./DevTools") : null;
+const DevToolsModule = import.meta.env.DEV
+  ? await import("./DevTools").catch((err) => {
+      console.error("[DevTools] Failed to load:", err);
+      return null;
+    })
+  : null;
 
 const STATUS_DISPLAY_DURATION = 1500;
 const SETTINGS_HEIGHT = 520;

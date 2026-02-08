@@ -6,7 +6,7 @@
 /* ── Dev Badge in Header ── */
 
 .dev-badge {
-  font-family: 'Cinzel', monospace;
+  font-family: "Cinzel", monospace;
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
@@ -47,7 +47,7 @@
   flex-direction: column;
   background: #1e1a15;
   color: #d4c8a8;
-  font-family: 'Courier New', Consolas, monospace;
+  font-family: "Courier New", Consolas, monospace;
   font-size: 11px;
 }
 
@@ -64,7 +64,7 @@
 }
 
 .devtools-title {
-  font-family: 'Cinzel', serif;
+  font-family: "Cinzel", serif;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -82,7 +82,7 @@
 
 .devtools-tab {
   padding: 3px 8px;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 10px;
   color: #8b7860;
   background: transparent;
@@ -148,7 +148,7 @@
 
 .devtools-btn {
   padding: 3px 10px;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 10px;
   color: #d4c8a8;
   background: #3a3225;
@@ -245,6 +245,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.devtools-log-expand {
+  color: #5a4f40;
+  flex-shrink: 0;
+  font-size: 8px;
+  margin-left: 4px;
+}
+
+.devtools-log-entry.clickable:hover .devtools-log-expand {
+  color: #c9a227;
 }
 
 .devtools-log-full {
@@ -261,11 +274,24 @@
 }
 
 /* Event type coloring */
-.event-error .devtools-log-event { color: #c45a3a; }
-.event-error .devtools-log-payload { color: #c45a3a; }
-.event-recording .devtools-log-event { color: #c97a30; }
-.event-transcription .devtools-log-event { color: #5a9a6a; }
-.event-audio .devtools-log-event { color: #5a7a9a; }
+.event-error .devtools-log-event {
+  color: #c45a3a;
+}
+.event-error .devtools-log-payload {
+  color: #c45a3a;
+}
+.event-recording .devtools-log-event {
+  color: #c97a30;
+}
+.event-transcription .devtools-log-event {
+  color: #5a9a6a;
+}
+.event-audio .devtools-log-event {
+  color: #5a7a9a;
+}
+.event-paste .devtools-log-event {
+  color: #9a7ac4;
+}
 
 /* ── State Inspector Panel ── */
 
@@ -335,7 +361,7 @@
 .devtools-mock-textarea {
   width: 100%;
   padding: 6px 8px;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 11px;
   color: #d4c8a8;
   background: #2a2318;
