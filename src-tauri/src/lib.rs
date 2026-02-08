@@ -27,6 +27,7 @@ pub struct AppState {
 struct RecorderState {
     handle: Option<RecordingHandle>,
     stop_polling: Arc<AtomicBool>,
+    original_app: Option<String>,
 }
 
 #[derive(Clone)]
@@ -423,9 +424,10 @@ fn destroy_indicator_window(app: &AppHandle) {
 async fn handle_recording_stop(
     app: AppHandle,
     audio_path: std::path::PathBuf,
+    original_app: Option<String>,
 ) {
     // Helper: check if a NEW recording is in progress (our indicator may have been reused).
-    // When true, we must not modify the indicator — the user is re-recording.
+    // When true, we must not modify the indicator or paste — the user is re-recording.
     let new_recording_active =
         || -> bool { app.state::<Mutex<AppState>>().lock().unwrap().is_recording };
 
@@ -484,9 +486,25 @@ async fn handle_recording_stop(
                 .last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
-            // Only hide indicator if no new recording started
+            // Only hide indicator and paste if no new recording started
             if !new_recording_active() {
                 destroy_indicator_window(&app);
+
+                // Paste to the original app (this will re-activate it).
+                // The paste functions save and restore the clipboard so the
+                // transcription text does not remain in the user's clipboard.
+                let paste_result = if let Some(ref bundle_id) = original_app {
+                    paste::paste_to_app(&text, bundle_id)
+                } else {
+                    paste::set_clipboard_and_paste(&text)
+                };
+
+                if let Err(e) = paste_result {
+                    eprintln!("Failed to paste: {}", e);
+                    let _ = app.emit("error", format!("Failed to paste: {}", e));
+                }
+            } else {
+                eprintln!("[Scrivano] Skipping paste — new recording in progress");
             }
         }
         Err(e) => {
@@ -513,6 +531,7 @@ pub fn run() {
         .manage(Mutex::new(RecorderState {
             handle: None,
             stop_polling: Arc::new(AtomicBool::new(false)),
+            original_app: None,
         }))
         .manage(Mutex::new(ShortcutSettings {
             current_shortcut: None,
@@ -662,6 +681,7 @@ pub fn run() {
                                             let mut state = recorder_state.lock().unwrap();
                                             state.stop_polling = Arc::clone(&stop_flag);
                                             state.handle = Some(handle);
+                                            state.original_app = original_app;
                                         }
 
                                         // Start polling thread for audio levels.
@@ -715,10 +735,12 @@ pub fn run() {
                                 }
                             }
                             ShortcutState::Released => {
-                                // Stop audio level polling
+                                // Stop audio level polling and get original app
+                                let original_app;
                                 {
                                     let state = recorder_state.lock().unwrap();
                                     state.stop_polling.store(true, Ordering::Relaxed);
+                                    original_app = state.original_app.clone();
                                 }
 
                                 let handle = recorder_state.lock().unwrap().handle.take();
@@ -733,6 +755,7 @@ pub fn run() {
                                             tauri::async_runtime::block_on(handle_recording_stop(
                                                 app_clone,
                                                 path,
+                                                original_app,
                                             ));
                                         }
                                         Err(e) => {
