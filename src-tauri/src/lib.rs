@@ -6,10 +6,11 @@ mod settings;
 mod transcription;
 
 use audio::{AudioPreviewHandle, RecordingHandle};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use settings::{Settings, ShortcutConfig, TranscriptionProvider};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::ActivationPolicy;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -114,12 +115,12 @@ fn get_api_key_from_cache(cache: &ApiKeyCache, provider: &TranscriptionProvider)
 
 #[tauri::command]
 fn get_transcription(state: tauri::State<'_, Mutex<AppState>>) -> String {
-    state.lock().unwrap().last_transcription.clone()
+    state.lock().last_transcription.clone()
 }
 
 #[tauri::command]
 fn get_recording_status(state: tauri::State<'_, Mutex<AppState>>) -> bool {
-    state.lock().unwrap().is_recording
+    state.lock().is_recording
 }
 
 #[tauri::command]
@@ -182,7 +183,7 @@ struct ShortcutInfo {
 
 #[tauri::command]
 fn get_shortcut(state: tauri::State<'_, Mutex<ShortcutSettings>>) -> ShortcutInfo {
-    let config = state.lock().unwrap().config.clone();
+    let config = state.lock().config.clone();
     ShortcutInfo {
         modifiers: config.modifiers.clone(),
         key: config.key.clone(),
@@ -224,7 +225,7 @@ fn set_shortcut(
     // Unregister the old shortcut
     {
         let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
-        let state = shortcut_state.lock().unwrap();
+        let state = shortcut_state.lock();
         if let Some(old_shortcut) = &state.current_shortcut {
             let _ = app.global_shortcut().unregister(*old_shortcut);
         }
@@ -238,7 +239,7 @@ fn set_shortcut(
     // Update the state
     {
         let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
-        let mut state = shortcut_state.lock().unwrap();
+        let mut state = shortcut_state.lock();
         state.current_shortcut = Some(new_shortcut);
         state.config = new_config.clone();
     }
@@ -289,7 +290,7 @@ fn get_api_key_status_internal(cache: &ApiKeyCache) -> ApiKeyStatus {
 
 #[tauri::command]
 fn get_api_key_status(cache: tauri::State<'_, Mutex<ApiKeyCache>>) -> ApiKeyStatus {
-    get_api_key_status_internal(&cache.lock().unwrap())
+    get_api_key_status_internal(&cache.lock())
 }
 
 #[tauri::command]
@@ -304,17 +305,32 @@ fn set_api_key(
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
-    let mut cache = cache.lock().unwrap();
+    let mut cache = cache.lock();
 
     if api_key.trim().is_empty() {
         // Delete from both keychain and cache
         keychain::delete_api_key(provider_key)?;
         cache.remove(provider_key);
     } else {
+        // Validate API key format
+        let trimmed = api_key.trim();
+        match provider_key {
+            "openai" => {
+                if !trimmed.starts_with("sk-") {
+                    return Err("OpenAI API keys should start with 'sk-'".to_string());
+                }
+            }
+            "groq" => {
+                if !trimmed.starts_with("gsk_") {
+                    return Err("Groq API keys should start with 'gsk_'".to_string());
+                }
+            }
+            _ => {}
+        }
+
         // Store in both keychain and cache
-        let trimmed = api_key.trim().to_string();
-        keychain::store_api_key(provider_key, &trimmed)?;
-        cache.set(provider_key, trimmed);
+        keychain::store_api_key(provider_key, trimmed)?;
+        cache.set(provider_key, trimmed.to_string());
     }
 
     Ok(get_api_key_status_internal(&cache))
@@ -330,7 +346,7 @@ struct ProviderInfo {
 
 #[tauri::command]
 fn get_available_providers(cache: tauri::State<'_, Mutex<ApiKeyCache>>) -> Vec<ProviderInfo> {
-    let cache = cache.lock().unwrap();
+    let cache = cache.lock();
     vec![
         ProviderInfo {
             id: "openai".to_string(),
@@ -357,7 +373,7 @@ struct TranscriptionSettings {
 fn get_transcription_settings(
     state: tauri::State<'_, Mutex<SettingsState>>,
 ) -> TranscriptionSettings {
-    let settings = &state.lock().unwrap().settings;
+    let settings = &state.lock().settings;
     TranscriptionSettings {
         provider: match settings.transcription.provider {
             TranscriptionProvider::OpenAI => "openai".to_string(),
@@ -373,7 +389,7 @@ fn set_transcription_provider(
     state: tauri::State<'_, Mutex<SettingsState>>,
     cache: tauri::State<'_, Mutex<ApiKeyCache>>,
 ) -> Result<TranscriptionSettings, String> {
-    let mut state_guard = state.lock().unwrap();
+    let mut state_guard = state.lock();
 
     let new_provider = match provider.to_lowercase().as_str() {
         "openai" => TranscriptionProvider::OpenAI,
@@ -382,7 +398,7 @@ fn set_transcription_provider(
     };
 
     // Validate that the provider has an API key configured (via cache + env)
-    if get_api_key_from_cache(&cache.lock().unwrap(), &new_provider).is_none() {
+    if get_api_key_from_cache(&cache.lock(), &new_provider).is_none() {
         return Err(format!("No API key configured for {}", provider));
     }
 
@@ -426,7 +442,7 @@ fn list_audio_input_devices() -> Vec<AudioDeviceInfo> {
 
 #[tauri::command]
 fn get_audio_input_device(state: tauri::State<'_, Mutex<SettingsState>>) -> Option<String> {
-    state.lock().unwrap().settings.audio_input_device.clone()
+    state.lock().settings.audio_input_device.clone()
 }
 
 #[tauri::command]
@@ -434,7 +450,7 @@ fn set_audio_input_device(
     device_name: Option<String>,
     state: tauri::State<'_, Mutex<SettingsState>>,
 ) -> Result<(), String> {
-    let mut state_guard = state.lock().unwrap();
+    let mut state_guard = state.lock();
     state_guard.settings.audio_input_device = device_name;
     settings::save_settings(&state_guard.settings)
 }
@@ -445,14 +461,9 @@ fn start_audio_preview(
     state: tauri::State<'_, Mutex<AudioPreviewState>>,
     settings_state: tauri::State<'_, Mutex<SettingsState>>,
 ) -> Result<(), String> {
-    let device_name = settings_state
-        .lock()
-        .unwrap()
-        .settings
-        .audio_input_device
-        .clone();
+    let device_name = settings_state.lock().settings.audio_input_device.clone();
 
-    let mut preview = state.lock().unwrap();
+    let mut preview = state.lock();
 
     // Stop existing preview if any
     if let Some(handle) = preview.handle.take() {
@@ -462,7 +473,7 @@ fn start_audio_preview(
 
     // Reset levels
     {
-        let mut levels = preview.levels.lock().unwrap();
+        let mut levels = preview.levels.lock();
         *levels = vec![0.15; 3];
     }
 
@@ -477,7 +488,7 @@ fn start_audio_preview(
     let levels_for_poll = Arc::clone(&levels);
     std::thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
-            let lvls = levels_for_poll.lock().unwrap().clone();
+            let lvls = levels_for_poll.lock().clone();
             let _ = app.emit("audio-preview-levels", &lvls);
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
@@ -488,7 +499,7 @@ fn start_audio_preview(
 
 #[tauri::command]
 fn stop_audio_preview(state: tauri::State<'_, Mutex<AudioPreviewState>>) {
-    let mut preview = state.lock().unwrap();
+    let mut preview = state.lock();
     preview.stop_polling.store(true, Ordering::Relaxed);
     if let Some(handle) = preview.handle.take() {
         handle.stop();
@@ -496,10 +507,7 @@ fn stop_audio_preview(state: tauri::State<'_, Mutex<AudioPreviewState>>) {
     // Reset levels — clone the Arc first so we can drop the outer guard
     let levels_arc = Arc::clone(&preview.levels);
     drop(preview);
-    match levels_arc.lock() {
-        Ok(mut levels) => *levels = vec![0.15; 3],
-        Err(e) => eprintln!("[Scrivano] Failed to reset preview levels: {}", e),
-    };
+    *levels_arc.lock() = vec![0.15; 3];
 }
 
 // ============================================================================
@@ -621,8 +629,7 @@ async fn handle_recording_stop(
 ) {
     // Helper: check if a NEW recording is in progress (our indicator may have been reused).
     // When true, we must not modify the indicator or paste — the user is re-recording.
-    let new_recording_active =
-        || -> bool { app.state::<Mutex<AppState>>().lock().unwrap().is_recording };
+    let new_recording_active = || -> bool { app.state::<Mutex<AppState>>().lock().is_recording };
 
     // Update indicator to processing state (only if no new recording started)
     if !new_recording_active() {
@@ -633,11 +640,11 @@ async fn handle_recording_stop(
     // Get settings and API key for the selected provider (from cache, never keychain)
     let (api_key, endpoint, model) = {
         let settings_state = app.state::<Mutex<SettingsState>>();
-        let settings = &settings_state.lock().unwrap().settings;
+        let settings = &settings_state.lock().settings;
 
         let provider = &settings.transcription.provider;
         let cache = app.state::<Mutex<ApiKeyCache>>();
-        let api_key = get_api_key_from_cache(&cache.lock().unwrap(), provider);
+        let api_key = get_api_key_from_cache(&cache.lock(), provider);
         let endpoint = settings::get_endpoint_for_provider(provider);
         let model = settings::get_model_for_provider(provider);
 
@@ -674,10 +681,7 @@ async fn handle_recording_stop(
 
     match transcription::transcribe_audio(request).await {
         Ok(text) => {
-            app.state::<Mutex<AppState>>()
-                .lock()
-                .unwrap()
-                .last_transcription = text.clone();
+            app.state::<Mutex<AppState>>().lock().last_transcription = text.clone();
             let _ = app.emit("transcription", text.clone());
 
             // Only hide indicator and paste if no new recording started
@@ -721,7 +725,14 @@ async fn handle_recording_stop(
         }
     }
 
-    let _ = std::fs::remove_file(audio_path);
+    // Clean up the recording file
+    if let Err(e) = std::fs::remove_file(&audio_path) {
+        eprintln!(
+            "[Scrivano] Failed to delete recording {}: {}",
+            audio_path.display(),
+            e
+        );
+    }
 }
 
 pub fn run() {
@@ -883,7 +894,7 @@ pub fn run() {
 
                                 let audio_device = {
                                     let ss = app.state::<Mutex<SettingsState>>();
-                                    let guard = ss.lock().unwrap();
+                                    let guard = ss.lock();
                                     guard.settings.audio_input_device.clone()
                                 };
 
@@ -915,7 +926,7 @@ pub fn run() {
                                         // Reset stop flag and store the handle
                                         let stop_flag = Arc::new(AtomicBool::new(false));
                                         {
-                                            let mut state = recorder_state.lock().unwrap();
+                                            let mut state = recorder_state.lock();
                                             state.stop_polling = Arc::clone(&stop_flag);
                                             state.handle = Some(handle);
                                             state.original_app = original_app;
@@ -950,7 +961,7 @@ pub fn run() {
 
                                             while !stop_flag.load(Ordering::Relaxed) {
                                                 let levels =
-                                                    audio_levels_arc.lock().unwrap().clone();
+                                                    audio_levels_arc.lock().clone();
                                                 let _ = app_clone.emit("audio-levels", &levels);
                                                 std::thread::sleep(
                                                     std::time::Duration::from_millis(50),
@@ -958,7 +969,7 @@ pub fn run() {
                                             }
                                         });
 
-                                        app_state.lock().unwrap().is_recording = true;
+                                        app_state.lock().is_recording = true;
                                         set_tray_icon(true);
                                         let _ = app.emit("recording-status", true);
                                     }
@@ -975,13 +986,13 @@ pub fn run() {
                                 // Stop audio level polling and get original app
                                 let original_app;
                                 {
-                                    let state = recorder_state.lock().unwrap();
+                                    let state = recorder_state.lock();
                                     state.stop_polling.store(true, Ordering::Relaxed);
                                     original_app = state.original_app.clone();
                                 }
 
-                                let handle = recorder_state.lock().unwrap().handle.take();
-                                app_state.lock().unwrap().is_recording = false;
+                                let handle = recorder_state.lock().handle.take();
+                                app_state.lock().is_recording = false;
                                 set_tray_icon(false);
                                 let _ = app.emit("recording-status", false);
 
@@ -1018,7 +1029,7 @@ pub fn run() {
             app.global_shortcut().register(shortcut)?;
             {
                 let shortcut_state = app.state::<Mutex<ShortcutSettings>>();
-                shortcut_state.lock().unwrap().current_shortcut = Some(shortcut);
+                shortcut_state.lock().current_shortcut = Some(shortcut);
             }
 
             Ok(())

@@ -23,3 +23,13 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment and secrets
+.env
+.env.*
+.env.local
+
+# Audio recordings
+*.wav
+
+# Rust build artifacts
+src-tauri/target/
