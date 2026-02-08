@@ -287,13 +287,48 @@ pub fn start_preview(
 ) -> Result<AudioPreviewHandle, String> {
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
+    let device_name_owned = device_name.map(|s| s.to_string());
 
-    let device = find_input_device(device_name)
-        .ok_or_else(|| "No input device available".to_string())?;
+    // cpal Stream is !Send on macOS, so we must create and own it on one thread.
+    // Use a channel to report whether setup succeeded before entering the keep-alive loop.
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
 
-    let config = device
-        .default_input_config()
-        .map_err(|e| format!("Failed to get input config: {}", e))?;
+    thread::spawn(move || {
+        run_preview(
+            device_name_owned.as_deref(),
+            audio_levels,
+            stop_flag_clone,
+            ready_tx,
+        );
+    });
+
+    ready_rx
+        .recv()
+        .map_err(|_| "Preview thread failed to start".to_string())?
+        .map(|_| AudioPreviewHandle { stop_flag })
+}
+
+fn run_preview(
+    device_name: Option<&str>,
+    audio_levels: Arc<Mutex<Vec<f32>>>,
+    stop_flag: Arc<AtomicBool>,
+    ready_tx: Sender<Result<(), String>>,
+) {
+    let device = match find_input_device(device_name) {
+        Some(d) => d,
+        None => {
+            let _ = ready_tx.send(Err("No input device available".to_string()));
+            return;
+        }
+    };
+
+    let config = match device.default_input_config() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = ready_tx.send(Err(format!("Failed to get input config: {}", e)));
+            return;
+        }
+    };
 
     let channels = config.channels();
     let level_window: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
@@ -343,24 +378,34 @@ pub fn start_preview(
                     None,
                 )
             }
-            _ => return Err("Unsupported sample format".to_string()),
+            _ => {
+                let _ = ready_tx.send(Err("Unsupported sample format".to_string()));
+                return;
+            }
         }
     };
 
-    let stream = stream.map_err(|e| format!("Failed to build preview stream: {}", e))?;
-    stream
-        .play()
-        .map_err(|e| format!("Failed to start preview stream: {}", e))?;
-
-    // Keep the stream alive on a thread until stop is signaled
-    thread::spawn(move || {
-        while !stop_flag_clone.load(Ordering::Relaxed) {
-            thread::sleep(std::time::Duration::from_millis(50));
+    let stream = match stream {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ready_tx.send(Err(format!("Failed to build preview stream: {}", e)));
+            return;
         }
-        drop(stream);
-    });
+    };
 
-    Ok(AudioPreviewHandle { stop_flag })
+    if let Err(e) = stream.play() {
+        let _ = ready_tx.send(Err(format!("Failed to start preview stream: {}", e)));
+        return;
+    }
+
+    // Signal success — stream is running
+    let _ = ready_tx.send(Ok(()));
+
+    // Keep the stream alive until stop is signaled
+    while !stop_flag.load(Ordering::Relaxed) {
+        thread::sleep(std::time::Duration::from_millis(50));
+    }
+    drop(stream);
 }
 
 /// Compute 3 audio level bars from recent samples

@@ -433,8 +433,10 @@ fn stop_audio_preview(state: tauri::State<'_, Mutex<AudioPreviewState>>) {
     if let Some(handle) = preview.handle.take() {
         handle.stop();
     }
-    // Reset levels
-    if let Ok(mut levels) = preview.levels.lock() {
+    // Reset levels — clone the Arc first so we can drop the outer guard
+    let levels_arc = Arc::clone(&preview.levels);
+    drop(preview);
+    if let Ok(mut levels) = levels_arc.lock() {
         *levels = vec![0.15; 3];
     }
 }
@@ -760,7 +762,8 @@ pub fn run() {
 
                                 let audio_device = {
                                     let ss = app.state::<Mutex<SettingsState>>();
-                                    ss.lock().unwrap().settings.audio_input_device.clone()
+                                    let guard = ss.lock().unwrap();
+                                    guard.settings.audio_input_device.clone()
                                 };
 
                                 match audio::start_recording(audio_device.as_deref()) {
