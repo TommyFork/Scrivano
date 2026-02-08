@@ -438,7 +438,7 @@ fn stop_audio_preview(state: tauri::State<'_, Mutex<AudioPreviewState>>) {
     drop(preview);
     if let Ok(mut levels) = levels_arc.lock() {
         *levels = vec![0.15; 3];
-    }
+    };
 }
 
 // ============================================================================
