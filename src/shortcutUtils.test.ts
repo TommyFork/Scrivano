@@ -19,7 +19,7 @@ function createKeyEvent(
     altKey?: boolean;
     shiftKey?: boolean;
     key?: string;
-  } = {}
+  } = {},
 ): KeyboardEventLike {
   return {
     code,
@@ -252,9 +252,7 @@ describe("formatShortcutForDisplay", () => {
   });
 
   it("handles all modifiers", () => {
-    expect(formatShortcutForDisplay(["super", "ctrl", "alt", "shift"], "a")).toBe(
-      "⌘⌃⌥⇧A"
-    );
+    expect(formatShortcutForDisplay(["super", "ctrl", "alt", "shift"], "a")).toBe("⌘⌃⌥⇧A");
   });
 });
 
@@ -327,9 +325,7 @@ describe("ShortcutRecorder", () => {
     });
 
     it("records single letter key with Cmd+Shift", () => {
-      recorder.handleKeyDown(
-        createKeyEvent("KeyL", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("KeyL", { metaKey: true, shiftKey: true }));
       expect(recorder.getDisplay()).toBe("⌘⇧L");
       expect(recorder.getRecordedShortcut()).toEqual({
         modifiers: ["super", "shift"],
@@ -338,9 +334,7 @@ describe("ShortcutRecorder", () => {
     });
 
     it("records space with modifiers", () => {
-      recorder.handleKeyDown(
-        createKeyEvent("Space", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("Space", { metaKey: true, shiftKey: true }));
       expect(recorder.getDisplay()).toBe("⌘⇧Space");
       expect(recorder.getRecordedShortcut()).toEqual({
         modifiers: ["super", "shift"],
@@ -364,9 +358,7 @@ describe("ShortcutRecorder", () => {
     });
 
     it("shows multiple modifiers as they are held", () => {
-      recorder.handleKeyDown(
-        createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true }));
       expect(recorder.getDisplay()).toBe("⌘⇧");
     });
 
@@ -472,21 +464,15 @@ describe("ShortcutRecorder", () => {
       expect(recorder.getDisplay()).toBe("⌘");
 
       // Press Shift while holding Cmd
-      recorder.handleKeyDown(
-        createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true }));
       expect(recorder.getDisplay()).toBe("⌘⇧");
 
       // Press Space while holding Cmd+Shift
-      recorder.handleKeyDown(
-        createKeyEvent("Space", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("Space", { metaKey: true, shiftKey: true }));
       expect(recorder.getDisplay()).toBe("⌘⇧Space");
 
       // Release Space
-      recorder.handleKeyUp(
-        createKeyEvent("Space", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyUp(createKeyEvent("Space", { metaKey: true, shiftKey: true }));
       expect(recorder.state.type).toBe("recording");
 
       // Release Shift
@@ -516,12 +502,8 @@ describe("ShortcutRecorder", () => {
 
     it("records Ctrl+Alt+Delete", () => {
       recorder.handleKeyDown(createKeyEvent("ControlLeft", { ctrlKey: true }));
-      recorder.handleKeyDown(
-        createKeyEvent("AltLeft", { ctrlKey: true, altKey: true })
-      );
-      recorder.handleKeyDown(
-        createKeyEvent("Delete", { ctrlKey: true, altKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("AltLeft", { ctrlKey: true, altKey: true }));
+      recorder.handleKeyDown(createKeyEvent("Delete", { ctrlKey: true, altKey: true }));
       expect(recorder.getDisplay()).toBe("⌃⌥⌦");
 
       recorder.handleKeyUp(createKeyEvent("Delete", { ctrlKey: true, altKey: true }));
@@ -672,17 +654,11 @@ describe("ShortcutRecorder", () => {
     it("correctly captures shortcut when keys are pressed rapidly", () => {
       // Simulate rapid Cmd+Shift+Space
       recorder.handleKeyDown(createKeyEvent("MetaLeft", { metaKey: true }));
-      recorder.handleKeyDown(
-        createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true })
-      );
-      recorder.handleKeyDown(
-        createKeyEvent("Space", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true }));
+      recorder.handleKeyDown(createKeyEvent("Space", { metaKey: true, shiftKey: true }));
 
       // All released at once (simulating key repeat)
-      recorder.handleKeyUp(
-        createKeyEvent("Space", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyUp(createKeyEvent("Space", { metaKey: true, shiftKey: true }));
       recorder.handleKeyUp(createKeyEvent("ShiftLeft", { metaKey: true }));
       recorder.handleKeyUp(createKeyEvent("MetaLeft"));
 
@@ -695,12 +671,8 @@ describe("ShortcutRecorder", () => {
 
     it("handles key release in different order than press", () => {
       recorder.handleKeyDown(createKeyEvent("MetaLeft", { metaKey: true }));
-      recorder.handleKeyDown(
-        createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true })
-      );
-      recorder.handleKeyDown(
-        createKeyEvent("KeyA", { metaKey: true, shiftKey: true })
-      );
+      recorder.handleKeyDown(createKeyEvent("ShiftLeft", { metaKey: true, shiftKey: true }));
+      recorder.handleKeyDown(createKeyEvent("KeyA", { metaKey: true, shiftKey: true }));
 
       // Release in reverse order
       recorder.handleKeyUp(createKeyEvent("MetaLeft", { shiftKey: true }));
