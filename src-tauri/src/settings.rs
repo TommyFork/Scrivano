@@ -230,20 +230,14 @@ pub fn format_shortcut_display(config: &ShortcutConfig) -> String {
     format!("{}{}", parts.join(""), key_display)
 }
 
-/// Get API key for a provider, preferring keychain over environment variables
+/// Get API key for a provider from the keychain
 pub fn get_api_key_for_provider(provider: &TranscriptionProvider) -> Option<String> {
     let provider_key = match provider {
         TranscriptionProvider::OpenAI => "openai",
         TranscriptionProvider::Groq => "groq",
     };
 
-    let env_var = match provider {
-        TranscriptionProvider::OpenAI => "OPENAI_API_KEY",
-        TranscriptionProvider::Groq => "GROQ_API_KEY",
-    };
-
-    // Try keychain first, then fall back to environment variable
-    crate::keychain::get_api_key(provider_key).or_else(|| std::env::var(env_var).ok())
+    crate::keychain::get_api_key(provider_key)
 }
 
 /// Get the model name for a provider
@@ -393,37 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn test_get_api_key_for_provider_env_var() {
-        // Save original env var if it exists
-        let original_key = std::env::var("OPENAI_API_KEY").ok();
-
-        // Clear and set test env var
-        std::env::remove_var("OPENAI_API_KEY");
-        std::env::set_var("OPENAI_API_KEY", "test-env-key");
-
-        let key = get_api_key_for_provider(&TranscriptionProvider::OpenAI);
-        // Key should be either from keychain (if set) or env var
-        assert!(key.is_some());
-
-        // If no keychain key is set, it should match our test env var
-        if !crate::keychain::has_api_key("openai") {
-            assert_eq!(key, Some("test-env-key".to_string()));
-        }
-
-        // Restore original env var or remove if none existed
-        if let Some(orig) = original_key {
-            std::env::set_var("OPENAI_API_KEY", orig);
-        } else {
-            std::env::remove_var("OPENAI_API_KEY");
-        }
-    }
-
-    #[test]
     fn test_get_api_key_for_provider_no_key() {
-        // Ensure no key is set
-        std::env::remove_var("GROQ_API_KEY");
         let key = get_api_key_for_provider(&TranscriptionProvider::Groq);
-        // Should be None if no keychain or env key is set
+        // Should be None if no keychain key is set
         // (unless developer has a real key in keychain, so we just verify it returns Option<String>)
         assert!(key.is_none() || key.is_some());
     }

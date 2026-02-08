@@ -4,7 +4,6 @@ interface ApiKeyEditorProps {
   label: string;
   placeholder: string;
   configured: boolean;
-  source: string | null;
   saving: boolean;
   isEditing: boolean;
   onStartEdit: () => void;
@@ -17,7 +16,6 @@ export function ApiKeyEditor({
   label,
   placeholder,
   configured,
-  source,
   saving,
   isEditing,
   onStartEdit,
@@ -42,11 +40,7 @@ export function ApiKeyEditor({
     <div className="api-key-row">
       <div className="api-key-header">
         <span className="api-key-label">{label}</span>
-        {configured && (
-          <span className="api-key-status configured">
-            {source === "env" ? "from env" : "configured"}
-          </span>
-        )}
+        {configured && <span className="api-key-status configured">configured</span>}
       </div>
       {configured && !isEditing ? (
         <div className="api-key-input-row">
@@ -62,16 +56,9 @@ export function ApiKeyEditor({
           >
             Edit
           </button>
-          {source === "keychain" && (
-            <button
-              className="api-key-clear"
-              onClick={onClear}
-              disabled={saving}
-              title="Remove key"
-            >
-              &#xD7;
-            </button>
-          )}
+          <button className="api-key-clear" onClick={onClear} disabled={saving} title="Remove key">
+            &#xD7;
+          </button>
         </div>
       ) : (
         <div className="api-key-input-row">

@@ -18,6 +18,14 @@ import type {
   SectionId,
 } from "./types";
 
+// Dev tools - only loaded in development builds
+const DevToolsModule = import.meta.env.DEV
+  ? await import("./DevTools").catch((err) => {
+      console.error("[DevTools] Failed to load:", err);
+      return null;
+    })
+  : null;
+
 const STATUS_DISPLAY_DURATION = 1500;
 const SETTINGS_HEIGHT = 520;
 const MAIN_HEIGHT = 340;
@@ -52,10 +60,23 @@ function App() {
     null,
   );
 
-  // Keep ref in sync with state
+  // Open on Login state
+  const [openOnLogin, setOpenOnLogin] = useState(false);
+  const suppressBlurRef = useRef(false);
+
+  // Dev tools state (only used in dev mode)
+  const [showDevTools, setShowDevTools] = useState(false);
+  const showDevToolsRef = useRef(false);
+  const devEventLog = DevToolsModule?.useEventLog();
+
+  // Keep refs in sync with state
   useEffect(() => {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
+
+  useEffect(() => {
+    showDevToolsRef.current = showDevTools;
+  }, [showDevTools]);
 
   useEffect(() => {
     invoke<string>("get_transcription").then((t) => {
@@ -66,6 +87,9 @@ function App() {
     invoke<ApiKeyStatus>("get_api_key_status").then(setApiKeyStatus);
     invoke<ProviderInfo[]>("get_available_providers").then(setProviders);
     invoke<TranscriptionSettings>("get_transcription_settings").then(setTranscriptionSettings);
+    invoke<boolean>("get_open_on_login")
+      .then(setOpenOnLogin)
+      .catch(() => {});
 
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
@@ -91,7 +115,9 @@ function App() {
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
-      } else if (showSettingsRef.current) {
+      } else if (showDevToolsRef.current) {
+        // Dev tools open: keep window as-is so devs can inspect while unfocused
+      } else if (showSettingsRef.current && !suppressBlurRef.current) {
         // Window lost focus while settings open: discard and reset
         setShowSettings(false);
         setShortcutError("");
@@ -334,6 +360,22 @@ function App() {
     }
   };
 
+  const handleOpenOnLoginToggle = async () => {
+    // Temporarily suppress the blur handler — macOS may briefly steal
+    // focus while modifying the LaunchAgent plist, which would otherwise
+    // close settings and reposition the window.
+    suppressBlurRef.current = true;
+    try {
+      const result = await invoke<boolean>("set_open_on_login", { enabled: !openOnLogin });
+      setOpenOnLogin(result);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      suppressBlurRef.current = false;
+    }
+  };
+
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -348,6 +390,15 @@ function App() {
             &#x2190;
           </button>
           <span className="status-text">Configuration</span>
+          {import.meta.env.DEV && (
+            <button
+              className="dev-badge"
+              onClick={() => setShowDevTools(true)}
+              title="Open Dev Tools"
+            >
+              DEV
+            </button>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}
@@ -445,7 +496,6 @@ function App() {
               label="OpenAI"
               placeholder="sk-..."
               configured={apiKeyStatus?.openai_configured ?? false}
-              source={apiKeyStatus?.openai_source ?? null}
               saving={apiKeySaving}
               isEditing={editingProvider === "openai"}
               onStartEdit={() => setEditingProvider("openai")}
@@ -458,7 +508,6 @@ function App() {
               label="Groq"
               placeholder="gsk_..."
               configured={apiKeyStatus?.groq_configured ?? false}
-              source={apiKeyStatus?.groq_source ?? null}
               saving={apiKeySaving}
               isEditing={editingProvider === "groq"}
               onStartEdit={() => setEditingProvider("groq")}
@@ -469,7 +518,37 @@ function App() {
           </CollapsibleSection>
         </div>
 
+        <div className="open-on-login-row">
+          <span className="open-on-login-label">Open on Login</span>
+          <button
+            className={`toggle-switch ${openOnLogin ? "active" : ""}`}
+            onClick={handleOpenOnLoginToggle}
+            role="switch"
+            aria-checked={openOnLogin}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
         <div className="hint">Settings</div>
+
+        {import.meta.env.DEV && DevToolsModule && devEventLog && (
+          <DevToolsModule.DevTools
+            isOpen={showDevTools}
+            onClose={() => setShowDevTools(false)}
+            eventLog={devEventLog.eventLog}
+            onClearLog={devEventLog.clearLog}
+            appState={{
+              isRecording,
+              status,
+              textLength: text.length,
+              hasApiKey: !!hasAnyApiKey,
+              provider: transcriptionSettings?.provider ?? null,
+              shortcut: currentShortcut?.display ?? null,
+              error,
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -483,6 +562,15 @@ function App() {
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>
+        {import.meta.env.DEV && (
+          <button
+            className="dev-badge"
+            onClick={() => setShowDevTools(true)}
+            title="Open Dev Tools"
+          >
+            DEV
+          </button>
+        )}
         <button className="settings-btn" onClick={openSettings} title="Settings">
           &#x2699;
         </button>
@@ -528,6 +616,24 @@ function App() {
             </div>
           )}
         </>
+      )}
+
+      {import.meta.env.DEV && DevToolsModule && devEventLog && (
+        <DevToolsModule.DevTools
+          isOpen={showDevTools}
+          onClose={() => setShowDevTools(false)}
+          eventLog={devEventLog.eventLog}
+          onClearLog={devEventLog.clearLog}
+          appState={{
+            isRecording,
+            status,
+            textLength: text.length,
+            hasApiKey: !!hasAnyApiKey,
+            provider: transcriptionSettings?.provider ?? null,
+            shortcut: currentShortcut?.display ?? null,
+            error,
+          }}
+        />
       )}
     </div>
   );

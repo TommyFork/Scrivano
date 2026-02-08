@@ -16,6 +16,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -87,6 +88,11 @@ fn paste_text(text: String) -> Result<(), String> {
 #[tauri::command]
 fn hide_window(window: tauri::Window) {
     let _ = window.hide();
+}
+
+#[tauri::command]
+fn set_prevent_auto_hide(prevent: bool, state: tauri::State<'_, Arc<AtomicBool>>) {
+    state.store(prevent, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -215,25 +221,19 @@ struct ApiKeyStatus {
 }
 
 fn get_api_key_status_internal() -> ApiKeyStatus {
-    let openai_from_keychain = keychain::has_api_key("openai");
-    let openai_from_env = std::env::var("OPENAI_API_KEY").is_ok();
-    let groq_from_keychain = keychain::has_api_key("groq");
-    let groq_from_env = std::env::var("GROQ_API_KEY").is_ok();
+    let openai_configured = keychain::has_api_key("openai");
+    let groq_configured = keychain::has_api_key("groq");
 
     ApiKeyStatus {
-        openai_configured: openai_from_keychain || openai_from_env,
-        groq_configured: groq_from_keychain || groq_from_env,
-        openai_source: if openai_from_keychain {
+        openai_configured,
+        groq_configured,
+        openai_source: if openai_configured {
             Some("keychain".to_string())
-        } else if openai_from_env {
-            Some("env".to_string())
         } else {
             None
         },
-        groq_source: if groq_from_keychain {
+        groq_source: if groq_configured {
             Some("keychain".to_string())
-        } else if groq_from_env {
-            Some("env".to_string())
         } else {
             None
         },
@@ -335,6 +335,34 @@ fn set_transcription_provider(
         provider,
         model: settings::get_model_for_provider(&new_provider).to_string(),
     })
+}
+
+// ============================================================================
+// Autostart Commands
+// ============================================================================
+
+#[tauri::command]
+fn get_open_on_login(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+#[tauri::command]
+fn set_open_on_login(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let autolaunch = app.autolaunch();
+    if enabled {
+        autolaunch
+            .enable()
+            .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+    } else {
+        autolaunch
+            .disable()
+            .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+    }
+    autolaunch
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
 }
 
 // ============================================================================
@@ -499,9 +527,20 @@ async fn handle_recording_stop(
                     paste::set_clipboard_and_paste(&text)
                 };
 
-                if let Err(e) = paste_result {
-                    eprintln!("Failed to paste: {}", e);
-                    let _ = app.emit("error", format!("Failed to paste: {}", e));
+                match &paste_result {
+                    Ok(()) => {
+                        let _ = app.emit(
+                            "paste",
+                            serde_json::json!({
+                                "text_length": text.len(),
+                                "target_app": original_app.as_deref().unwrap_or("unknown"),
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to paste: {}", e);
+                        let _ = app.emit("error", format!("Failed to paste: {}", e));
+                    }
                 }
             } else {
                 eprintln!("[Scrivano] Skipping paste — new recording in progress");
@@ -527,6 +566,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::AppleScript,
+            None,
+        ))
         .manage(Mutex::new(AppState::default()))
         .manage(Mutex::new(RecorderState {
             handle: None,
@@ -540,15 +583,20 @@ pub fn run() {
         .manage(Mutex::new(SettingsState {
             settings: loaded_settings,
         }))
+        .manage(Arc::new(AtomicBool::new(false)))
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
 
-            // Hide window when it loses focus (click outside)
+            // Hide window when it loses focus (click outside),
+            // unless auto-hide is suppressed (e.g. dev tools open).
+            let prevent_hide = app.state::<Arc<AtomicBool>>().inner().clone();
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        let _ = w.hide();
+                        if !prevent_hide.load(Ordering::Relaxed) {
+                            let _ = w.hide();
+                        }
                     }
                 });
             }
@@ -592,10 +640,16 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
+                                // Activate the app first — required for Accessory apps
+                                // (no dock icon) to bring windows to the foreground,
+                                // especially after auto-launch via LaunchAgent.
+                                cursor::activate_self();
+
                                 let (x, y, h) = match (&rect.position, &rect.size) {
                                     (tauri::Position::Physical(p), tauri::Size::Physical(s)) => {
                                         (p.x, p.y, s.height as i32)
@@ -792,6 +846,7 @@ pub fn run() {
             copy_to_clipboard,
             paste_text,
             hide_window,
+            set_prevent_auto_hide,
             resize_window,
             get_shortcut,
             set_shortcut,
@@ -800,6 +855,8 @@ pub fn run() {
             get_available_providers,
             get_transcription_settings,
             set_transcription_provider,
+            get_open_on_login,
+            set_open_on_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

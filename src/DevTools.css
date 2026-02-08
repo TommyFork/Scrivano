@@ -1,0 +1,376 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DEV TOOLS - Development-only overlay panel
+   Styled to complement the parchment theme without breaking immersion
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dev Badge in Header ── */
+
+.dev-badge {
+  font-family: "Cinzel", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #c9a227;
+  background: rgba(201, 162, 39, 0.15);
+  border: 1px solid rgba(201, 162, 39, 0.4);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  line-height: 1.4;
+}
+
+.dev-badge:hover {
+  background: rgba(201, 162, 39, 0.25);
+  border-color: rgba(201, 162, 39, 0.6);
+  color: #d4af37;
+}
+
+/* ── Overlay & Panel ── */
+
+.devtools-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(44, 24, 16, 0.4);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.devtools-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1e1a15;
+  color: #d4c8a8;
+  font-family: "Courier New", Consolas, monospace;
+  font-size: 11px;
+}
+
+/* ── Header ── */
+
+.devtools-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #2a2318;
+  border-bottom: 1px solid #4a3f30;
+  flex-shrink: 0;
+}
+
+.devtools-title {
+  font-family: "Cinzel", serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #c9a227;
+  flex-shrink: 0;
+}
+
+.devtools-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+  flex: 1;
+}
+
+.devtools-tab {
+  padding: 3px 8px;
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  color: #8b7860;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.devtools-tab:hover {
+  color: #d4c8a8;
+  background: rgba(201, 162, 39, 0.1);
+}
+
+.devtools-tab.active {
+  color: #c9a227;
+  background: rgba(201, 162, 39, 0.15);
+  border-color: rgba(201, 162, 39, 0.3);
+}
+
+.devtools-close {
+  background: none;
+  border: none;
+  color: #8b7860;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.devtools-close:hover {
+  color: #d4c8a8;
+  background: rgba(139, 37, 0, 0.2);
+}
+
+/* ── Body ── */
+
+.devtools-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Event Log Panel ── */
+
+.devtools-event-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.devtools-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  background: #252017;
+  border-bottom: 1px solid #3a3225;
+  flex-shrink: 0;
+}
+
+.devtools-btn {
+  padding: 3px 10px;
+  font-family: "Courier New", monospace;
+  font-size: 10px;
+  color: #d4c8a8;
+  background: #3a3225;
+  border: 1px solid #4a3f30;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.devtools-btn:hover {
+  background: #4a3f30;
+  border-color: #5a4f40;
+}
+
+.devtools-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #8b7860;
+  cursor: pointer;
+}
+
+.devtools-checkbox input {
+  accent-color: #c9a227;
+}
+
+.devtools-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #4a3f30 #1e1a15;
+}
+
+.devtools-log::-webkit-scrollbar {
+  width: 6px;
+}
+
+.devtools-log::-webkit-scrollbar-track {
+  background: #1e1a15;
+}
+
+.devtools-log::-webkit-scrollbar-thumb {
+  background: #4a3f30;
+  border-radius: 3px;
+}
+
+.devtools-empty {
+  padding: 20px;
+  text-align: center;
+  color: #5a4f40;
+  font-style: italic;
+}
+
+.devtools-log-entry {
+  padding: 2px 10px;
+  border-bottom: 1px solid rgba(74, 63, 48, 0.3);
+}
+
+.devtools-log-entry:hover {
+  background: rgba(201, 162, 39, 0.05);
+}
+
+.devtools-log-entry.clickable {
+  cursor: pointer;
+}
+
+.devtools-log-entry.expanded {
+  background: rgba(201, 162, 39, 0.08);
+}
+
+.devtools-log-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.devtools-log-time {
+  color: #5a4f40;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.devtools-log-event {
+  color: #8b7860;
+  flex-shrink: 0;
+  min-width: 120px;
+  font-weight: bold;
+}
+
+.devtools-log-payload {
+  color: #a89070;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.devtools-log-expand {
+  color: #5a4f40;
+  flex-shrink: 0;
+  font-size: 8px;
+  margin-left: 4px;
+}
+
+.devtools-log-entry.clickable:hover .devtools-log-expand {
+  color: #c9a227;
+}
+
+.devtools-log-full {
+  margin: 4px 0 2px 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  color: #d4c8a8;
+  font-size: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+/* Event type coloring */
+.event-error .devtools-log-event {
+  color: #c45a3a;
+}
+.event-error .devtools-log-payload {
+  color: #c45a3a;
+}
+.event-recording .devtools-log-event {
+  color: #c97a30;
+}
+.event-transcription .devtools-log-event {
+  color: #5a9a6a;
+}
+.event-audio .devtools-log-event {
+  color: #5a7a9a;
+}
+.event-paste .devtools-log-event {
+  color: #9a7ac4;
+}
+
+/* ── State Inspector Panel ── */
+
+.devtools-state-panel {
+  padding: 10px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.devtools-state-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.devtools-state-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(74, 63, 48, 0.3);
+}
+
+.devtools-state-label {
+  color: #8b7860;
+  font-weight: bold;
+  white-space: nowrap;
+  width: 100px;
+}
+
+.devtools-state-value {
+  color: #d4c8a8;
+  word-break: break-all;
+}
+
+.devtools-state-highlight .devtools-state-value {
+  color: #c9a227;
+  font-weight: bold;
+}
+
+/* ── Mock Controls Panel ── */
+
+.devtools-mock-panel {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.devtools-mock-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.devtools-mock-label {
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #8b7860;
+}
+
+.devtools-mock-row {
+  display: flex;
+  gap: 6px;
+}
+
+.devtools-mock-textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  color: #d4c8a8;
+  background: #2a2318;
+  border: 1px solid #4a3f30;
+  border-radius: 3px;
+  resize: vertical;
+  outline: none;
+}
+
+.devtools-mock-textarea:focus {
+  border-color: #c9a227;
+}
