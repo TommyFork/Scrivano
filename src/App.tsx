@@ -496,7 +496,6 @@ function App() {
               label="OpenAI"
               placeholder="sk-..."
               configured={apiKeyStatus?.openai_configured ?? false}
-              source={apiKeyStatus?.openai_source ?? null}
               saving={apiKeySaving}
               isEditing={editingProvider === "openai"}
               onStartEdit={() => setEditingProvider("openai")}
@@ -509,7 +508,6 @@ function App() {
               label="Groq"
               placeholder="gsk_..."
               configured={apiKeyStatus?.groq_configured ?? false}
-              source={apiKeyStatus?.groq_source ?? null}
               saving={apiKeySaving}
               isEditing={editingProvider === "groq"}
               onStartEdit={() => setEditingProvider("groq")}

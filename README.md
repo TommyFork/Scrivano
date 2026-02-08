@@ -59,12 +59,6 @@ bun run tauri dev
 
 On first launch, configure your API key by clicking the tray icon and opening settings.
 
-You can also set keys via environment variables:
-```bash
-export OPENAI_API_KEY="sk-..."
-export GROQ_API_KEY="gsk_..."
-```
-
 ### Build for Production
 
 ```bash
