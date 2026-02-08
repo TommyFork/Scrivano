@@ -7,6 +7,7 @@ export interface EventLogEntry {
   timestamp: string;
   event: string;
   payload: string;
+  fullPayload: string;
 }
 
 type DevTab = "events" | "state" | "mocks";
@@ -104,6 +105,8 @@ function EventLogPanel({
   onToggleAutoScroll: () => void;
   logEndRef: RefObject<HTMLDivElement | null>;
 }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
   return (
     <div className="devtools-event-panel">
       <div className="devtools-toolbar">
@@ -119,13 +122,26 @@ function EventLogPanel({
         {eventLog.length === 0 && (
           <div className="devtools-empty">No events captured yet. Interact with the app to see IPC events.</div>
         )}
-        {eventLog.map((entry) => (
-          <div key={entry.id} className={`devtools-log-entry ${getEventClass(entry.event)}`}>
-            <span className="devtools-log-time">{entry.timestamp}</span>
-            <span className="devtools-log-event">{entry.event}</span>
-            <span className="devtools-log-payload">{entry.payload}</span>
-          </div>
-        ))}
+        {eventLog.map((entry) => {
+          const isExpanded = expandedId === entry.id;
+          const isTruncated = entry.fullPayload.length > entry.payload.length;
+          return (
+            <div
+              key={entry.id}
+              className={`devtools-log-entry ${getEventClass(entry.event)} ${isTruncated ? "clickable" : ""} ${isExpanded ? "expanded" : ""}`}
+              onClick={() => isTruncated && setExpandedId(isExpanded ? null : entry.id)}
+            >
+              <div className="devtools-log-row">
+                <span className="devtools-log-time">{entry.timestamp}</span>
+                <span className="devtools-log-event">{entry.event}</span>
+                <span className="devtools-log-payload">{entry.payload}</span>
+              </div>
+              {isExpanded && (
+                <pre className="devtools-log-full">{entry.fullPayload}</pre>
+              )}
+            </div>
+          );
+        })}
         <div ref={logEndRef} />
       </div>
     </div>
@@ -254,18 +270,20 @@ export function useEventLog() {
     const now = new Date();
     const timestamp = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}.${now.getMilliseconds().toString().padStart(3, "0")}`;
 
-    let payloadStr: string;
+    let fullPayload: string;
     if (typeof payload === "string") {
-      payloadStr = payload.length > 100 ? payload.slice(0, 100) + "..." : payload;
+      fullPayload = payload;
     } else {
-      const json = JSON.stringify(payload);
-      payloadStr = json.length > 100 ? json.slice(0, 100) + "..." : json;
+      fullPayload = JSON.stringify(payload, null, 2);
     }
+    const truncated = fullPayload.length > 80
+      ? fullPayload.slice(0, 80).replace(/\n/g, " ") + "..."
+      : fullPayload.replace(/\n/g, " ");
 
     setEventLog((prev) => {
       const next = [
         ...prev,
-        { id: nextEventId++, timestamp, event, payload: payloadStr },
+        { id: nextEventId++, timestamp, event, payload: truncated, fullPayload },
       ];
       return next.length > MAX_LOG_SIZE ? next.slice(-MAX_LOG_SIZE) : next;
     });

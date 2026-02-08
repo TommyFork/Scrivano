@@ -104,12 +104,17 @@ function App() {
 
   // Dev tools state (only used in dev mode)
   const [showDevTools, setShowDevTools] = useState(false);
+  const showDevToolsRef = useRef(false);
   const devEventLog = DevToolsModule?.useEventLog();
 
-  // Keep ref in sync with state
+  // Keep refs in sync with state
   useEffect(() => {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
+
+  useEffect(() => {
+    showDevToolsRef.current = showDevTools;
+  }, [showDevTools]);
 
   useEffect(() => {
     invoke<string>("get_transcription").then((t) => {
@@ -145,6 +150,8 @@ function App() {
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
+      } else if (showDevToolsRef.current) {
+        // Dev tools open: keep window as-is so devs can inspect while unfocused
       } else if (showSettingsRef.current) {
         // Window lost focus while settings open: discard and reset
         setShowSettings(false);
