@@ -52,6 +52,7 @@ pub fn default_input_device_name() -> Option<String> {
 }
 
 /// Find an input device by name, falling back to the default.
+/// Logs a warning when a named device is not found.
 fn find_input_device(device_name: Option<&str>) -> Option<cpal::Device> {
     let host = cpal::default_host();
     if let Some(name) = device_name {
@@ -64,8 +65,25 @@ fn find_input_device(device_name: Option<&str>) -> Option<cpal::Device> {
                 }
             }
         }
+        eprintln!(
+            "[Scrivano] Audio device '{}' not found, falling back to system default",
+            name
+        );
     }
     host.default_input_device()
+}
+
+/// Push a mono sample into the level window and flush to audio_levels when full.
+fn push_level_sample(
+    mono_abs: f32,
+    level_window: &mut Vec<f32>,
+    audio_levels: &Arc<Mutex<Vec<f32>>>,
+) {
+    level_window.push(mono_abs);
+    if level_window.len() >= 512 {
+        update_audio_levels(level_window, audio_levels);
+        level_window.clear();
+    }
 }
 
 pub fn start_recording(device_name: Option<&str>) -> Result<RecordingHandle, String> {
@@ -123,12 +141,7 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
         audio_levels: &Arc<Mutex<Vec<f32>>>,
     ) {
         samples.push(mono);
-        level_window.push(mono.abs());
-        // Update audio levels periodically (every ~512 mono samples)
-        if level_window.len() >= 512 {
-            update_audio_levels(level_window, audio_levels);
-            level_window.clear();
-        }
+        push_level_sample(mono.abs(), level_window, audio_levels);
     }
 
     let stream = match config.sample_format() {
@@ -344,11 +357,7 @@ fn run_preview(
                     let mut lw = level_window_clone.lock().unwrap();
                     for chunk in data.chunks(channels as usize) {
                         let mono = chunk.iter().sum::<f32>() / chunk.len() as f32;
-                        lw.push(mono.abs());
-                        if lw.len() >= 512 {
-                            update_audio_levels(&lw, &audio_levels_clone);
-                            lw.clear();
-                        }
+                        push_level_sample(mono.abs(), &mut lw, &audio_levels_clone);
                     }
                 },
                 |err| eprintln!("Audio preview stream error: {}", err),
@@ -367,11 +376,7 @@ fn run_preview(
                                 .map(|&s| s as f32 / i16::MAX as f32)
                                 .sum::<f32>()
                                 / chunk.len() as f32;
-                            lw.push(mono.abs());
-                            if lw.len() >= 512 {
-                                update_audio_levels(&lw, &audio_levels_clone2);
-                                lw.clear();
-                            }
+                            push_level_sample(mono.abs(), &mut lw, &audio_levels_clone2);
                         }
                     },
                     |err| eprintln!("Audio preview stream error: {}", err),

@@ -4,7 +4,7 @@
    In the spirit of Leonardo da Vinci's notebooks
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=MedievalSharp&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=MedievalSharp&display=swap");
 
 :root {
   /* Parchment & Paper */
@@ -37,7 +37,7 @@
   --error-ink: #7c2d12;
   --error-bg: rgba(139, 37, 0, 0.08);
 
-  font-family: 'Cormorant Garamond', 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
+  font-family: "Cormorant Garamond", "Palatino Linotype", "Book Antiqua", Palatino, serif;
   font-size: 15px;
   line-height: 1.6;
   font-weight: 500;
@@ -81,12 +81,12 @@
 /* Decorative corner flourishes */
 .container::before,
 .container::after {
-  content: '❧';
+  content: "❧";
   position: absolute;
   font-size: 20px;
   color: var(--ink-faded);
   opacity: 0.3;
-  font-family: 'MedievalSharp', serif;
+  font-family: "MedievalSharp", serif;
   z-index: 0;
   pointer-events: none;
 }
@@ -121,7 +121,7 @@
 
 /* Decorative line flourish */
 .header::after {
-  content: '• • •';
+  content: "• • •";
   position: absolute;
   bottom: -8px;
   left: 50%;
@@ -138,8 +138,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 30% 30%, var(--verdigris) 0%, #2d5a3d 100%);
+  background: radial-gradient(circle at 30% 30%, var(--verdigris) 0%, #2d5a3d 100%);
   border: 2px solid var(--ink-brown);
   box-shadow:
     inset 0 2px 4px rgba(255, 255, 255, 0.3),
@@ -149,7 +148,7 @@
 
 /* Ready state - Green inkwell (full) */
 .status-indicator::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 2px;
   left: 2px;
@@ -161,14 +160,19 @@
 
 /* Recording state - Red wax melting */
 .status-indicator.recording {
-  background:
-    radial-gradient(circle at 30% 30%, var(--wax-red-light) 0%, var(--wax-red) 70%, var(--wax-shadow) 100%);
+  background: radial-gradient(
+    circle at 30% 30%,
+    var(--wax-red-light) 0%,
+    var(--wax-red) 70%,
+    var(--wax-shadow) 100%
+  );
   animation: waxGlow 1.5s ease-in-out infinite;
   border-color: var(--wax-shadow);
 }
 
 @keyframes waxGlow {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow:
       inset 0 2px 4px rgba(255, 255, 255, 0.3),
       0 0 8px rgba(139, 37, 0, 0.5),
@@ -183,7 +187,7 @@
 }
 
 .status-text {
-  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-family: "Cinzel", "Trajan Pro", serif;
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-sepia);
@@ -209,7 +213,7 @@
 }
 
 .error::before {
-  content: '⚠';
+  content: "⚠";
   margin-right: 8px;
   font-style: normal;
 }
@@ -226,7 +230,7 @@
 }
 
 .transcription {
-  font-family: 'Cormorant Garamond', 'Palatino Linotype', serif;
+  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
   font-size: 16px;
   line-height: 1.75;
   color: var(--ink-dark);
@@ -257,7 +261,7 @@
   width: 100%;
   height: 100%;
   padding: 12px;
-  font-family: 'Cormorant Garamond', 'Palatino Linotype', serif;
+  font-family: "Cormorant Garamond", "Palatino Linotype", serif;
   font-size: 16px;
   line-height: 1.75;
   border: 2px solid var(--ink-faded);
@@ -326,15 +330,14 @@
 .btn {
   flex: 1;
   padding: 10px 16px;
-  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-family: "Cinzel", "Trajan Pro", serif;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   border: 2px solid var(--ink-brown);
   border-radius: 3px;
-  background:
-    linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+  background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
   color: var(--ink-sepia);
   cursor: pointer;
   transition: all 0.2s ease;
@@ -346,7 +349,7 @@
 }
 
 .btn::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
@@ -361,8 +364,7 @@
 }
 
 .btn:hover:not(:disabled) {
-  background:
-    linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
   box-shadow:
     0 4px 8px rgba(44, 24, 16, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
@@ -384,8 +386,12 @@
 
 /* Primary Button - Gold Illuminated */
 .btn.primary {
-  background:
-    linear-gradient(180deg, var(--gold-bright) 0%, var(--gold) 50%, var(--gold-dark) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--gold-bright) 0%,
+    var(--gold) 50%,
+    var(--gold-dark) 100%
+  );
   border-color: var(--gold-dark);
   color: var(--ink-dark);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
@@ -397,8 +403,7 @@
 }
 
 .btn.primary:hover:not(:disabled) {
-  background:
-    linear-gradient(180deg, #e0c040 0%, var(--gold-bright) 50%, var(--gold) 100%);
+  background: linear-gradient(180deg, #e0c040 0%, var(--gold-bright) 50%, var(--gold) 100%);
   box-shadow:
     0 4px 8px rgba(166, 124, 0, 0.4),
     0 6px 12px rgba(44, 24, 16, 0.25),
@@ -412,7 +417,7 @@
 
 .hint {
   margin-top: 8px;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 12px;
   font-style: italic;
   color: var(--ink-faded);
@@ -471,16 +476,14 @@
   }
 
   .btn {
-    background:
-      linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+    background: linear-gradient(180deg, var(--parchment) 0%, var(--parchment-dark) 100%);
     box-shadow:
       0 2px 4px rgba(0, 0, 0, 0.3),
       inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 
   .btn:hover:not(:disabled) {
-    background:
-      linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+    background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
   }
 
   .btn.primary {
@@ -582,7 +585,7 @@
 }
 
 .settings-description {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 13px;
   font-style: italic;
   color: var(--ink-faded);
@@ -645,7 +648,7 @@
 }
 
 .section-title {
-  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-family: "Cinzel", "Trajan Pro", serif;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-sepia);
@@ -682,8 +685,7 @@
   justify-content: center;
   padding: 16px 20px;
   margin: 8px 0;
-  background:
-    linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+  background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
   border: 2px solid var(--ink-faded);
   border-radius: 4px;
   box-shadow:
@@ -692,7 +694,7 @@
 }
 
 .shortcut-current {
-  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-family: "Cinzel", "Trajan Pro", serif;
   font-size: 22px;
   font-weight: 600;
   color: var(--ink-dark);
@@ -704,7 +706,9 @@
   position: relative;
   flex-direction: column;
   gap: 4px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .shortcut-clickable:hover:not(.shortcut-display-recording) {
@@ -712,14 +716,14 @@
 }
 
 .shortcut-change-hint {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 11px;
   font-style: italic;
   color: var(--ink-faded);
 }
 
 .shortcut-recording-text {
-  font-family: 'Cinzel', 'Trajan Pro', serif;
+  font-family: "Cinzel", "Trajan Pro", serif;
   font-size: 15px;
   font-weight: 600;
   color: var(--wax-red);
@@ -742,8 +746,13 @@
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .shortcut-error-box {
@@ -766,7 +775,7 @@
 }
 
 .shortcut-error-box span:last-child {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 13px;
   font-style: italic;
   color: var(--error-ink);
@@ -817,8 +826,7 @@
   }
 
   .shortcut-display {
-    background:
-      linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
+    background: linear-gradient(180deg, var(--vellum) 0%, var(--parchment) 100%);
     box-shadow:
       inset 0 2px 8px rgba(0, 0, 0, 0.2),
       0 2px 4px rgba(0, 0, 0, 0.2);
@@ -841,7 +849,7 @@
 }
 
 .api-key-label {
-  font-family: 'Cinzel', serif;
+  font-family: "Cinzel", serif;
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-sepia);
@@ -850,7 +858,7 @@
 }
 
 .api-key-status {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 11px;
   font-style: italic;
 }
@@ -874,7 +882,7 @@
 .api-key-input {
   width: 100%;
   padding: 7px 32px 7px 10px;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 14px;
   border: 1.5px solid var(--ink-faded);
   border-radius: 3px;
@@ -922,7 +930,7 @@
 .api-key-display {
   flex: 1;
   padding: 7px 10px;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 14px;
   color: var(--ink-faded);
   background: var(--parchment-dark);
@@ -1017,14 +1025,14 @@
 }
 
 .model-name {
-  font-family: 'Cinzel', serif;
+  font-family: "Cinzel", serif;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-sepia);
 }
 
 .model-id {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 12px;
   color: var(--ink-faded);
   font-style: italic;
@@ -1032,7 +1040,7 @@
 }
 
 .model-unavailable {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 11px;
   color: var(--wax-red);
   margin-top: 4px;
@@ -1053,7 +1061,7 @@
 }
 
 .setup-required p {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 16px;
   color: var(--ink-sepia);
   margin: 0;
@@ -1076,7 +1084,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .current-model {
-  font-family: 'Cinzel', serif;
+  font-family: "Cinzel", serif;
   font-size: 10px;
   font-weight: 600;
   color: var(--ink-faded);
@@ -1106,7 +1114,7 @@
 .audio-device-select {
   width: 100%;
   padding: 8px 28px 8px 10px;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 14px;
   border: 1.5px solid var(--ink-faded);
   border-radius: 3px;
@@ -1138,7 +1146,7 @@
 }
 
 .audio-preview-label {
-  font-family: 'Cinzel', serif;
+  font-family: "Cinzel", serif;
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-faded);
@@ -1169,11 +1177,16 @@
 }
 
 .audio-level-bar-fill.active {
-  background: linear-gradient(90deg, var(--verdigris) 0%, var(--gold) 60%, var(--wax-red-light) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--verdigris) 0%,
+    var(--gold) 60%,
+    var(--wax-red-light) 100%
+  );
 }
 
 .audio-preview-hint {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 11px;
   font-style: italic;
   color: var(--ink-faded);
