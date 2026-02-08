@@ -305,7 +305,11 @@ export function useEventLog() {
     if (typeof payload === "string") {
       fullPayload = payload;
     } else {
-      fullPayload = JSON.stringify(payload, null, 2);
+      try {
+        fullPayload = JSON.stringify(payload, null, 2);
+      } catch {
+        fullPayload = "[unserializable payload]";
+      }
     }
     const isTruncated = fullPayload.length > 80;
     const displayPayload = isTruncated

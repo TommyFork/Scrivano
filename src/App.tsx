@@ -11,7 +11,10 @@ import {
 
 // Dev tools - only loaded in development builds
 const DevToolsModule = import.meta.env.DEV
-  ? await import("./DevTools")
+  ? await import("./DevTools").catch((err) => {
+      console.error("[DevTools] Failed to load:", err);
+      return null;
+    })
   : null;
 
 interface ShortcutInfo {
