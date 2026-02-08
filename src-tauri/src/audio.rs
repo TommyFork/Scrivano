@@ -1,8 +1,9 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use hound::{WavSpec, WavWriter};
+use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 pub enum RecordingCommand {
@@ -75,7 +76,7 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
     // For computing audio levels - we'll track RMS over recent samples
     let level_window: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
 
-    let err_fn = |err| eprintln!("Audio stream error: {}", err);
+    let err_fn = |err| tracing::error!("Audio stream error: {}", err);
 
     /// Process mono samples: store for WAV output and track levels for the indicator.
     fn process_mono_samples(
@@ -101,8 +102,8 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
             device.build_input_stream(
                 &config.into(),
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    let mut s = samples_clone.lock().unwrap();
-                    let mut lw = level_window_clone.lock().unwrap();
+                    let mut s = samples_clone.lock();
+                    let mut lw = level_window_clone.lock();
                     for chunk in data.chunks(channels as usize) {
                         let mono = chunk.iter().sum::<f32>() / chunk.len() as f32;
                         process_mono_samples(mono, &mut s, &mut lw, &audio_levels_clone);
@@ -119,8 +120,8 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
             device.build_input_stream(
                 &config.into(),
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                    let mut s = samples_clone.lock().unwrap();
-                    let mut lw = level_window_clone.lock().unwrap();
+                    let mut s = samples_clone.lock();
+                    let mut lw = level_window_clone.lock();
                     for chunk in data.chunks(channels as usize) {
                         let mono: f32 = chunk
                             .iter()
@@ -141,8 +142,8 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
             device.build_input_stream(
                 &config.into(),
                 move |data: &[u16], _: &cpal::InputCallbackInfo| {
-                    let mut s = samples_clone.lock().unwrap();
-                    let mut lw = level_window_clone.lock().unwrap();
+                    let mut s = samples_clone.lock();
+                    let mut lw = level_window_clone.lock();
                     for chunk in data.chunks(channels as usize) {
                         let mono: f32 = chunk
                             .iter()
@@ -189,16 +190,21 @@ fn run_recording(command_receiver: Receiver<RecordingCommand>, audio_levels: Arc
         // Stop the stream by dropping it
         drop(stream);
 
-        let samples_data = samples.lock().unwrap();
+        let samples_data = samples.lock();
 
         if samples_data.len() < 1000 {
             let _ = sender.send(Err("Recording too short - hold the key longer".to_string()));
             return;
         }
 
-        // Create temp file path
+        // Create unique temp file path to prevent symlink attacks and race conditions
         let temp_dir = std::env::temp_dir();
-        let file_path = temp_dir.join("scrivano_recording.wav");
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let pid = std::process::id();
+        let file_path = temp_dir.join(format!("scrivano_{}_{}.wav", timestamp, pid));
 
         // Write WAV file
         let spec = WavSpec {
@@ -265,7 +271,5 @@ fn update_audio_levels(samples: &[f32], audio_levels: &Arc<Mutex<Vec<f32>>>) {
         levels.push(level);
     }
 
-    if let Ok(mut al) = audio_levels.lock() {
-        *al = levels;
-    }
+    *audio_levels.lock() = levels;
 }

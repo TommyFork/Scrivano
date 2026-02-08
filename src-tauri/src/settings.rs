@@ -25,17 +25,6 @@ pub enum TranscriptionProvider {
     Groq,
 }
 
-// API keys are now stored securely in the OS keychain.
-// This struct is kept only so old settings files deserialize without error.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[allow(dead_code)]
-pub struct ApiKeysConfig {
-    #[serde(default, skip_serializing)]
-    openai_api_key: Option<String>,
-    #[serde(default, skip_serializing)]
-    groq_api_key: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionConfig {
     pub provider: TranscriptionProvider,
@@ -53,8 +42,9 @@ impl Default for TranscriptionConfig {
 pub struct Settings {
     #[serde(default)]
     pub shortcut: ShortcutConfig,
-    #[serde(default)]
-    pub api_keys: ApiKeysConfig,
+    // Backwards compat: old settings files may contain "api_keys"; consumed but never written
+    #[serde(default, skip_serializing)]
+    pub api_keys: Option<serde_json::Value>,
     #[serde(default)]
     pub transcription: TranscriptionConfig,
 }
@@ -75,9 +65,9 @@ pub fn load_settings() -> Settings {
         match fs::read_to_string(&path) {
             Ok(content) => match serde_json::from_str(&content) {
                 Ok(settings) => return settings,
-                Err(e) => eprintln!("Failed to parse settings: {}", e),
+                Err(e) => tracing::warn!("Failed to parse settings: {}", e),
             },
-            Err(e) => eprintln!("Failed to read settings file: {}", e),
+            Err(e) => tracing::warn!("Failed to read settings file: {}", e),
         }
     }
 
@@ -90,7 +80,11 @@ pub fn save_settings(settings: &Settings) -> Result<(), String> {
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("Failed to serialize settings: {}", e))?;
 
-    fs::write(&path, content).map_err(|e| format!("Failed to write settings file: {}", e))?;
+    // Atomic write: write to temp file then rename to prevent corruption on crash
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, &content)
+        .map_err(|e| format!("Failed to write temp settings file: {}", e))?;
+    fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to rename settings file: {}", e))?;
 
     Ok(())
 }
@@ -447,5 +441,52 @@ mod tests {
 
         let groq: TranscriptionProvider = serde_json::from_str("\"groq\"").unwrap();
         assert_eq!(groq, TranscriptionProvider::Groq);
+    }
+
+    #[test]
+    fn test_backwards_compat_old_settings_with_api_keys() {
+        // Old settings files may have an "api_keys" field; ensure they still deserialize
+        let json = r#"{
+            "shortcut": {"modifiers": ["super"], "key": "Space"},
+            "api_keys": {"openai_api_key": "sk-old-key", "groq_api_key": null},
+            "transcription": {"provider": "openai"}
+        }"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.shortcut.key, "Space");
+        assert_eq!(
+            settings.transcription.provider,
+            TranscriptionProvider::OpenAI
+        );
+    }
+
+    #[test]
+    fn test_api_keys_not_serialized() {
+        // When serializing, the api_keys field should NOT appear in output
+        let settings = Settings::default();
+        let json = serde_json::to_string_pretty(&settings).unwrap();
+        assert!(
+            !json.contains("api_keys"),
+            "api_keys should be skip_serializing but was found in: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn test_settings_round_trip() {
+        // Serialize then deserialize, ensure consistency
+        let original = Settings {
+            shortcut: ShortcutConfig {
+                modifiers: vec!["ctrl".to_string(), "shift".to_string()],
+                key: "a".to_string(),
+            },
+            api_keys: None,
+            transcription: TranscriptionConfig {
+                provider: TranscriptionProvider::Groq,
+            },
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.shortcut.key, "a");
+        assert_eq!(restored.transcription.provider, TranscriptionProvider::Groq);
     }
 }

@@ -54,9 +54,8 @@ pub fn activate_app_fast(bundle_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn set_clipboard_and_paste(text: &str) -> Result<(), String> {
-    copy_to_clipboard(text)?;
-
+/// Simulate a Cmd+V paste via AppleScript
+fn simulate_paste() -> Result<(), String> {
     let output = Command::new("osascript")
         .arg("-e")
         .arg(r#"tell application "System Events" to keystroke "v" using command down"#)
@@ -73,23 +72,14 @@ pub fn set_clipboard_and_paste(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn set_clipboard_and_paste(text: &str) -> Result<(), String> {
+    copy_to_clipboard(text)?;
+    simulate_paste()
+}
+
 /// Paste text to a specific app (activates it first)
 pub fn paste_to_app(text: &str, bundle_id: &str) -> Result<(), String> {
     copy_to_clipboard(text)?;
     activate_app(bundle_id)?;
-
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(r#"tell application "System Events" to keystroke "v" using command down"#)
-        .output()
-        .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "AppleScript error: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    Ok(())
+    simulate_paste()
 }
