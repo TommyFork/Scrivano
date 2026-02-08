@@ -72,16 +72,20 @@ mod macos {
         unsafe {
             let cls = objc_getClass(c"NSApplication".as_ptr());
             if cls.is_null() {
+                eprintln!("[Scrivano] Failed to get NSApplication class for app activation");
                 return;
             }
             let ns_app = objc_msgSend(cls, sel_registerName(c"sharedApplication".as_ptr()));
             if ns_app.is_null() {
+                eprintln!("[Scrivano] Failed to get NSApplication.sharedApplication");
                 return;
             }
             // [NSApp activateIgnoringOtherApps:YES]
-            // Cast objc_msgSend to accept a BOOL (i8) argument
-            let send: extern "C" fn(*mut c_void, *mut c_void, i8) =
-                std::mem::transmute(objc_msgSend as *const c_void);
+            // Cast function item to fn pointer, then transmute to the required signature
+            let send: unsafe extern "C" fn(*mut c_void, *mut c_void, i8) -> *mut c_void =
+                std::mem::transmute(
+                    objc_msgSend as unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void,
+                );
             send(
                 ns_app,
                 sel_registerName(c"activateIgnoringOtherApps:".as_ptr()),

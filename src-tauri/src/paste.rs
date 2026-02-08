@@ -63,46 +63,58 @@ fn activate_app_native(bundle_id: &str) -> Result<(), String> {
         fn objc_msgSend(obj: *mut c_void, sel: *mut c_void) -> *mut c_void;
     }
 
-    unsafe {
-        let cls = objc_getClass(c"NSRunningApplication".as_ptr());
-        if cls.is_null() {
-            return Err("Failed to get NSRunningApplication class".to_string());
-        }
+    let cls = unsafe { objc_getClass(c"NSRunningApplication".as_ptr()) };
+    if cls.is_null() {
+        return Err("Failed to get NSRunningApplication class".to_string());
+    }
 
-        // CFString is toll-free bridged with NSString
-        let cf_bundle_id = CFString::new(bundle_id);
-        let ns_bundle_id = cf_bundle_id.as_concrete_TypeRef() as *mut c_void;
+    // CFString is toll-free bridged with NSString
+    let cf_bundle_id = CFString::new(bundle_id);
+    let ns_bundle_id = cf_bundle_id.as_concrete_TypeRef() as *mut c_void;
+    if ns_bundle_id.is_null() {
+        return Err(format!(
+            "Failed to create NSString for bundle ID: {}",
+            bundle_id
+        ));
+    }
 
-        // [NSRunningApplication runningApplicationsWithBundleIdentifier:]
-        let send_with_id: extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> *mut c_void =
-            std::mem::transmute(objc_msgSend as *const c_void);
-        let apps = send_with_id(
+    // [NSRunningApplication runningApplicationsWithBundleIdentifier:]
+    // Cast function item to fn pointer, then transmute to the required signature
+    let apps = unsafe {
+        let send_with_id: unsafe extern "C" fn(
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+        ) -> *mut c_void = std::mem::transmute(
+            objc_msgSend as unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void,
+        );
+        send_with_id(
             cls,
             sel_registerName(c"runningApplicationsWithBundleIdentifier:".as_ptr()),
             ns_bundle_id,
-        );
-        if apps.is_null() {
-            return Err(format!("No running apps found for {}", bundle_id));
-        }
-
-        // [apps firstObject]
-        let app = objc_msgSend(apps, sel_registerName(c"firstObject".as_ptr()));
-        if app.is_null() {
-            return Err(format!("App {} is not running", bundle_id));
-        }
-
-        // [app activateWithOptions:NSApplicationActivateIgnoringOtherApps]
-        // NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2
-        let send_with_opts: extern "C" fn(*mut c_void, *mut c_void, u64) -> i8 =
-            std::mem::transmute(objc_msgSend as *const c_void);
-        send_with_opts(
-            app,
-            sel_registerName(c"activateWithOptions:".as_ptr()),
-            2,
-        );
-
-        Ok(())
+        )
+    };
+    if apps.is_null() {
+        return Err(format!("No running apps found for {}", bundle_id));
     }
+
+    // [apps firstObject]
+    let app = unsafe { objc_msgSend(apps, sel_registerName(c"firstObject".as_ptr())) };
+    if app.is_null() {
+        return Err(format!("App {} is not running", bundle_id));
+    }
+
+    // [app activateWithOptions:NSApplicationActivateIgnoringOtherApps]
+    // NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2
+    unsafe {
+        let send_with_opts: unsafe extern "C" fn(*mut c_void, *mut c_void, u64) -> *mut c_void =
+            std::mem::transmute(
+                objc_msgSend as unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void,
+            );
+        send_with_opts(app, sel_registerName(c"activateWithOptions:".as_ptr()), 2);
+    }
+
+    Ok(())
 }
 
 /// Activate an application by its bundle identifier
