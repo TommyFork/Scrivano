@@ -386,6 +386,10 @@ function App() {
   };
 
   const handleOpenOnLoginToggle = async () => {
+    // Temporarily suppress the blur handler — macOS may briefly steal
+    // focus while modifying the LaunchAgent plist, which would otherwise
+    // close settings and reposition the window.
+    showSettingsRef.current = false;
     try {
       const result = await invoke<boolean>("set_open_on_login", { enabled: !openOnLogin });
       setOpenOnLogin(result);
@@ -393,6 +397,7 @@ function App() {
     } catch (e) {
       setError(String(e));
     }
+    showSettingsRef.current = true;
   };
 
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;
