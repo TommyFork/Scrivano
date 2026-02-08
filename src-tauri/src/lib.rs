@@ -65,6 +65,53 @@ struct SettingsState {
     settings: Settings,
 }
 
+/// In-memory cache for API keys so the OS keychain is only read once (at first
+/// setup or, for signed builds, at first launch after storing).  Every
+/// subsequent access — status checks, provider lists, transcriptions — reads
+/// from this cache instead of hitting the keychain again.
+struct ApiKeyCache {
+    keys: std::collections::HashMap<String, String>,
+}
+
+impl ApiKeyCache {
+    /// Build the cache by reading each provider from the keychain once.
+    fn load_from_keychain() -> Self {
+        let mut keys = std::collections::HashMap::new();
+        for provider in &["openai", "groq"] {
+            if let Some(key) = keychain::get_api_key(provider) {
+                keys.insert(provider.to_string(), key);
+            }
+        }
+        Self { keys }
+    }
+
+    fn get(&self, provider: &str) -> Option<String> {
+        self.keys.get(provider).cloned()
+    }
+
+    fn has(&self, provider: &str) -> bool {
+        self.keys.contains_key(provider)
+    }
+
+    fn set(&mut self, provider: &str, key: String) {
+        self.keys.insert(provider.to_string(), key);
+    }
+
+    fn remove(&mut self, provider: &str) {
+        self.keys.remove(provider);
+    }
+}
+
+/// Resolve an API key for the given provider from the in-memory cache.
+/// This never touches the keychain.
+fn get_api_key_from_cache(cache: &ApiKeyCache, provider: &TranscriptionProvider) -> Option<String> {
+    let provider_key = match provider {
+        TranscriptionProvider::OpenAI => "openai",
+        TranscriptionProvider::Groq => "groq",
+    };
+    cache.get(provider_key)
+}
+
 #[tauri::command]
 fn get_transcription(state: tauri::State<'_, Mutex<AppState>>) -> String {
     state.lock().unwrap().last_transcription.clone()
@@ -220,9 +267,9 @@ struct ApiKeyStatus {
     groq_source: Option<String>,
 }
 
-fn get_api_key_status_internal() -> ApiKeyStatus {
-    let openai_configured = keychain::has_api_key("openai");
-    let groq_configured = keychain::has_api_key("groq");
+fn get_api_key_status_internal(cache: &ApiKeyCache) -> ApiKeyStatus {
+    let openai_configured = cache.has("openai");
+    let groq_configured = cache.has("groq");
 
     ApiKeyStatus {
         openai_configured,
@@ -241,27 +288,36 @@ fn get_api_key_status_internal() -> ApiKeyStatus {
 }
 
 #[tauri::command]
-fn get_api_key_status() -> ApiKeyStatus {
-    get_api_key_status_internal()
+fn get_api_key_status(cache: tauri::State<'_, Mutex<ApiKeyCache>>) -> ApiKeyStatus {
+    get_api_key_status_internal(&cache.lock().unwrap())
 }
 
 #[tauri::command]
-fn set_api_key(provider: String, api_key: String) -> Result<ApiKeyStatus, String> {
+fn set_api_key(
+    provider: String,
+    api_key: String,
+    cache: tauri::State<'_, Mutex<ApiKeyCache>>,
+) -> Result<ApiKeyStatus, String> {
     let provider_key = match provider.to_lowercase().as_str() {
         "openai" => "openai",
         "groq" => "groq",
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
+    let mut cache = cache.lock().unwrap();
+
     if api_key.trim().is_empty() {
-        // Delete the key from keychain
+        // Delete from both keychain and cache
         keychain::delete_api_key(provider_key)?;
+        cache.remove(provider_key);
     } else {
-        // Store the key in keychain
-        keychain::store_api_key(provider_key, api_key.trim())?;
+        // Store in both keychain and cache
+        let trimmed = api_key.trim().to_string();
+        keychain::store_api_key(provider_key, &trimmed)?;
+        cache.set(provider_key, trimmed);
     }
 
-    Ok(get_api_key_status_internal())
+    Ok(get_api_key_status_internal(&cache))
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -273,19 +329,20 @@ struct ProviderInfo {
 }
 
 #[tauri::command]
-fn get_available_providers() -> Vec<ProviderInfo> {
+fn get_available_providers(cache: tauri::State<'_, Mutex<ApiKeyCache>>) -> Vec<ProviderInfo> {
+    let cache = cache.lock().unwrap();
     vec![
         ProviderInfo {
             id: "openai".to_string(),
             name: "OpenAI Whisper".to_string(),
             model: "whisper-1".to_string(),
-            available: settings::get_api_key_for_provider(&TranscriptionProvider::OpenAI).is_some(),
+            available: cache.has("openai"),
         },
         ProviderInfo {
             id: "groq".to_string(),
             name: "Groq Whisper".to_string(),
             model: "whisper-large-v3-turbo".to_string(),
-            available: settings::get_api_key_for_provider(&TranscriptionProvider::Groq).is_some(),
+            available: cache.has("groq"),
         },
     ]
 }
@@ -314,6 +371,7 @@ fn get_transcription_settings(
 fn set_transcription_provider(
     provider: String,
     state: tauri::State<'_, Mutex<SettingsState>>,
+    cache: tauri::State<'_, Mutex<ApiKeyCache>>,
 ) -> Result<TranscriptionSettings, String> {
     let mut state_guard = state.lock().unwrap();
 
@@ -323,8 +381,8 @@ fn set_transcription_provider(
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
-    // Validate that the provider has an API key configured
-    if settings::get_api_key_for_provider(&new_provider).is_none() {
+    // Validate that the provider has an API key configured (via cache + env)
+    if get_api_key_from_cache(&cache.lock().unwrap(), &new_provider).is_none() {
         return Err(format!("No API key configured for {}", provider));
     }
 
@@ -465,13 +523,14 @@ async fn handle_recording_stop(
         let _ = app.emit("indicator-state", "processing");
     }
 
-    // Get settings and API key for the selected provider
+    // Get settings and API key for the selected provider (from cache, never keychain)
     let (api_key, endpoint, model) = {
         let settings_state = app.state::<Mutex<SettingsState>>();
         let settings = &settings_state.lock().unwrap().settings;
 
         let provider = &settings.transcription.provider;
-        let api_key = settings::get_api_key_for_provider(provider);
+        let cache = app.state::<Mutex<ApiKeyCache>>();
+        let api_key = get_api_key_from_cache(&cache.lock().unwrap(), provider);
         let endpoint = settings::get_endpoint_for_provider(provider);
         let model = settings::get_model_for_provider(provider);
 
@@ -561,6 +620,11 @@ pub fn run() {
     let loaded_settings = settings::load_settings();
     let shortcut_config = loaded_settings.shortcut.clone();
 
+    // Read API keys from keychain exactly once, cache in memory for the
+    // lifetime of the process.  This is the single point where keychain
+    // access happens — all later reads go through the cache.
+    let api_key_cache = ApiKeyCache::load_from_keychain();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -582,6 +646,7 @@ pub fn run() {
             settings: loaded_settings,
         }))
         .manage(Arc::new(AtomicBool::new(false)))
+        .manage(Mutex::new(api_key_cache))
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
 

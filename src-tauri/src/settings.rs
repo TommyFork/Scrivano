@@ -230,7 +230,10 @@ pub fn format_shortcut_display(config: &ShortcutConfig) -> String {
     format!("{}{}", parts.join(""), key_display)
 }
 
-/// Get API key for a provider from the keychain
+/// Get API key for a provider from the keychain.
+/// NOTE: Runtime code should use `get_api_key_from_cache` in lib.rs instead
+/// to avoid repeated keychain prompts.  This function is kept for tests.
+#[allow(dead_code)]
 pub fn get_api_key_for_provider(provider: &TranscriptionProvider) -> Option<String> {
     let provider_key = match provider {
         TranscriptionProvider::OpenAI => "openai",
