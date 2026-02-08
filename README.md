@@ -1,4 +1,7 @@
-<h1 align="center">Scrivano</h1>
+<p align="center">
+<img width="128" height="128" alt="scrivano-iOS-Default-1024x1024@1x" src="https://github.com/user-attachments/assets/29f41728-dbee-4f90-9cd4-f6c58cc57eb5" />
+</p>
+<h2 align="center">Scrivano</h2>
 
 <p align="center">
   A macOS voice-to-text app that lives in your menu bar.<br/>
