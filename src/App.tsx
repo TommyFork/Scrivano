@@ -54,6 +54,7 @@ function App() {
 
   // Open on Login state
   const [openOnLogin, setOpenOnLogin] = useState(false);
+  const suppressBlurRef = useRef(false);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -95,7 +96,7 @@ function App() {
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
-      } else if (showSettingsRef.current) {
+      } else if (showSettingsRef.current && !suppressBlurRef.current) {
         // Window lost focus while settings open: discard and reset
         setShowSettings(false);
         setShortcutError("");
@@ -342,15 +343,16 @@ function App() {
     // Temporarily suppress the blur handler — macOS may briefly steal
     // focus while modifying the LaunchAgent plist, which would otherwise
     // close settings and reposition the window.
-    showSettingsRef.current = false;
+    suppressBlurRef.current = true;
     try {
       const result = await invoke<boolean>("set_open_on_login", { enabled: !openOnLogin });
       setOpenOnLogin(result);
       setError("");
     } catch (e) {
-      setError(String(e));
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      suppressBlurRef.current = false;
     }
-    showSettingsRef.current = true;
   };
 
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;

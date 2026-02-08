@@ -555,7 +555,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            tauri_plugin_autostart::MacosLauncher::AppleScript,
             None,
         ))
         .manage(Mutex::new(AppState::default()))
@@ -623,10 +623,16 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
+                                // Activate the app first — required for Accessory apps
+                                // (no dock icon) to bring windows to the foreground,
+                                // especially after auto-launch via LaunchAgent.
+                                cursor::activate_self();
+
                                 let (x, y, h) = match (&rect.position, &rect.size) {
                                     (tauri::Position::Physical(p), tauri::Size::Physical(s)) => {
                                         (p.x, p.y, s.height as i32)
