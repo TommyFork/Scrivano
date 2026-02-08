@@ -247,6 +247,11 @@ describe("App", () => {
   it("hides window when Escape key is pressed", async () => {
     render(<App />);
 
+    // Wait for initial async state updates to settle
+    await waitFor(() => {
+      expect(screen.getByText("Ready")).toBeInTheDocument();
+    });
+
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(mockedInvoke).toHaveBeenCalledWith("hide_window");
@@ -254,6 +259,11 @@ describe("App", () => {
 
   it("does not hide window for other keys", async () => {
     render(<App />);
+
+    // Wait for initial async state updates to settle
+    await waitFor(() => {
+      expect(screen.getByText("Ready")).toBeInTheDocument();
+    });
 
     // Clear any previous calls from component mount
     mockedInvoke.mockClear();

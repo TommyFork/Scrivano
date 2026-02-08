@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -8,62 +8,19 @@ import {
   type ShortcutRecorder,
   type KeyboardEventLike,
 } from "./shortcutUtils";
-
-interface ShortcutInfo {
-  modifiers: string[];
-  key: string;
-  display: string;
-}
-
-interface ApiKeyStatus {
-  openai_configured: boolean;
-  groq_configured: boolean;
-  openai_source: string | null;
-  groq_source: string | null;
-}
-
-interface ProviderInfo {
-  id: string;
-  name: string;
-  model: string;
-  available: boolean;
-}
-
-interface TranscriptionSettings {
-  provider: string;
-  model: string;
-}
-
-type SectionId = "model" | "shortcut" | "apikeys";
+import { CollapsibleSection } from "./components/CollapsibleSection";
+import { ApiKeyEditor } from "./components/ApiKeyEditor";
+import type {
+  ShortcutInfo,
+  ApiKeyStatus,
+  ProviderInfo,
+  TranscriptionSettings,
+  SectionId,
+} from "./types";
 
 const STATUS_DISPLAY_DURATION = 1500;
 const SETTINGS_HEIGHT = 520;
 const MAIN_HEIGHT = 340;
-
-function CollapsibleSection({
-  id,
-  title,
-  openSection,
-  onToggle,
-  children,
-}: {
-  id: SectionId;
-  title: string;
-  openSection: SectionId | null;
-  onToggle: (id: SectionId) => void;
-  children: React.ReactNode;
-}) {
-  const isOpen = openSection === id;
-  return (
-    <div className="collapsible-section">
-      <button className="section-header" onClick={() => onToggle(id)}>
-        <span className="section-title">{title}</span>
-        <span className={`section-chevron ${isOpen ? "open" : ""}`}>&#x25B8;</span>
-      </button>
-      {isOpen && <div className="section-body">{children}</div>}
-    </div>
-  );
-}
 
 function App() {
   const [text, setText] = useState("");
@@ -86,10 +43,6 @@ function App() {
 
   // API Keys state
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
-  const [openaiKeyInput, setOpenaiKeyInput] = useState("");
-  const [groqKeyInput, setGroqKeyInput] = useState("");
-  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [showGroqKey, setShowGroqKey] = useState(false);
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [editingProvider, setEditingProvider] = useState<"openai" | "groq" | null>(null);
 
@@ -145,8 +98,6 @@ function App() {
         setIsRecordingShortcutActive(false);
         setLiveDisplay("");
         setEditingProvider(null);
-        setOpenaiKeyInput("");
-        setGroqKeyInput("");
         invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
       }
     });
@@ -204,8 +155,6 @@ function App() {
     setIsRecordingShortcutActive(false);
     setLiveDisplay("");
     setEditingProvider(null);
-    setOpenaiKeyInput("");
-    setGroqKeyInput("");
     invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
   }, []);
 
@@ -327,18 +276,14 @@ function App() {
 
   // ── API Key handlers ──
 
-  const handleSaveApiKey = async (provider: "openai" | "groq") => {
+  const handleSaveApiKey = async (provider: "openai" | "groq", apiKey: string) => {
     setApiKeySaving(true);
     try {
-      const keyValue = provider === "openai" ? openaiKeyInput : groqKeyInput;
       const result = await invoke<ApiKeyStatus>("set_api_key", {
         provider,
-        apiKey: keyValue,
+        apiKey,
       });
       setApiKeyStatus(result);
-
-      if (provider === "openai") setOpenaiKeyInput("");
-      else setGroqKeyInput("");
       setEditingProvider(null);
 
       const updatedProviders = await invoke<ProviderInfo[]>("get_available_providers");
@@ -496,181 +441,31 @@ function App() {
           >
             <p className="settings-description">Manage your API keys</p>
 
-            {/* OpenAI Key */}
-            <div className="api-key-row">
-              <div className="api-key-header">
-                <span className="api-key-label">OpenAI</span>
-                {apiKeyStatus?.openai_configured && (
-                  <span className="api-key-status configured">
-                    {apiKeyStatus.openai_source === "env" ? "from env" : "configured"}
-                  </span>
-                )}
-              </div>
-              {apiKeyStatus?.openai_configured && editingProvider !== "openai" ? (
-                <div className="api-key-input-row">
-                  <div className="api-key-display">
-                    &#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => {
-                      setOpenaiKeyInput("");
-                      setEditingProvider("openai");
-                    }}
-                  >
-                    Edit
-                  </button>
-                  {apiKeyStatus.openai_source === "keychain" && (
-                    <button
-                      className="api-key-clear"
-                      onClick={() => handleClearApiKey("openai")}
-                      disabled={apiKeySaving}
-                      title="Remove key"
-                    >
-                      &#xD7;
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="api-key-input-row">
-                  <div className="api-key-input-wrapper">
-                    <input
-                      type={showOpenaiKey ? "text" : "password"}
-                      className="api-key-input"
-                      placeholder="sk-..."
-                      value={openaiKeyInput}
-                      onChange={(e) => setOpenaiKeyInput(e.target.value)}
-                      autoFocus={editingProvider === "openai"}
-                    />
-                    {openaiKeyInput && (
-                      <button
-                        className="api-key-eye"
-                        onClick={() => setShowOpenaiKey(!showOpenaiKey)}
-                        title={showOpenaiKey ? "Hide" : "Show"}
-                        tabIndex={-1}
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        >
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                          {showOpenaiKey && <line x1="1" y1="1" x2="23" y2="23" />}
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => handleSaveApiKey("openai")}
-                    disabled={apiKeySaving || !openaiKeyInput.trim()}
-                  >
-                    Save
-                  </button>
-                  {editingProvider === "openai" && (
-                    <button
-                      className="btn small"
-                      onClick={() => {
-                        setOpenaiKeyInput("");
-                        setEditingProvider(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <ApiKeyEditor
+              label="OpenAI"
+              placeholder="sk-..."
+              configured={apiKeyStatus?.openai_configured ?? false}
+              source={apiKeyStatus?.openai_source ?? null}
+              saving={apiKeySaving}
+              isEditing={editingProvider === "openai"}
+              onStartEdit={() => setEditingProvider("openai")}
+              onCancelEdit={() => setEditingProvider(null)}
+              onSave={(key) => handleSaveApiKey("openai", key)}
+              onClear={() => handleClearApiKey("openai")}
+            />
 
-            {/* Groq Key */}
-            <div className="api-key-row">
-              <div className="api-key-header">
-                <span className="api-key-label">Groq</span>
-                {apiKeyStatus?.groq_configured && (
-                  <span className="api-key-status configured">
-                    {apiKeyStatus.groq_source === "env" ? "from env" : "configured"}
-                  </span>
-                )}
-              </div>
-              {apiKeyStatus?.groq_configured && editingProvider !== "groq" ? (
-                <div className="api-key-input-row">
-                  <div className="api-key-display">
-                    &#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => {
-                      setGroqKeyInput("");
-                      setEditingProvider("groq");
-                    }}
-                  >
-                    Edit
-                  </button>
-                  {apiKeyStatus.groq_source === "keychain" && (
-                    <button
-                      className="api-key-clear"
-                      onClick={() => handleClearApiKey("groq")}
-                      disabled={apiKeySaving}
-                      title="Remove key"
-                    >
-                      &#xD7;
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="api-key-input-row">
-                  <div className="api-key-input-wrapper">
-                    <input
-                      type={showGroqKey ? "text" : "password"}
-                      className="api-key-input"
-                      placeholder="gsk_..."
-                      value={groqKeyInput}
-                      onChange={(e) => setGroqKeyInput(e.target.value)}
-                      autoFocus={editingProvider === "groq"}
-                    />
-                    {groqKeyInput && (
-                      <button
-                        className="api-key-eye"
-                        onClick={() => setShowGroqKey(!showGroqKey)}
-                        title={showGroqKey ? "Hide" : "Show"}
-                        tabIndex={-1}
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                        >
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                          {showGroqKey && <line x1="1" y1="1" x2="23" y2="23" />}
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => handleSaveApiKey("groq")}
-                    disabled={apiKeySaving || !groqKeyInput.trim()}
-                  >
-                    Save
-                  </button>
-                  {editingProvider === "groq" && (
-                    <button
-                      className="btn small"
-                      onClick={() => {
-                        setGroqKeyInput("");
-                        setEditingProvider(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <ApiKeyEditor
+              label="Groq"
+              placeholder="gsk_..."
+              configured={apiKeyStatus?.groq_configured ?? false}
+              source={apiKeyStatus?.groq_source ?? null}
+              saving={apiKeySaving}
+              isEditing={editingProvider === "groq"}
+              onStartEdit={() => setEditingProvider("groq")}
+              onCancelEdit={() => setEditingProvider(null)}
+              onSave={(key) => handleSaveApiKey("groq", key)}
+              onClear={() => handleClearApiKey("groq")}
+            />
           </CollapsibleSection>
         </div>
 
