@@ -70,7 +70,9 @@ function App() {
     invoke<ApiKeyStatus>("get_api_key_status").then(setApiKeyStatus);
     invoke<ProviderInfo[]>("get_available_providers").then(setProviders);
     invoke<TranscriptionSettings>("get_transcription_settings").then(setTranscriptionSettings);
-    invoke<boolean>("get_open_on_login").then(setOpenOnLogin).catch(() => {});
+    invoke<boolean>("get_open_on_login")
+      .then(setOpenOnLogin)
+      .catch(() => {});
 
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
