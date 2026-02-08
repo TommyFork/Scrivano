@@ -60,6 +60,10 @@ function App() {
     null,
   );
 
+  // Open on Login state
+  const [openOnLogin, setOpenOnLogin] = useState(false);
+  const suppressBlurRef = useRef(false);
+
   // Dev tools state (only used in dev mode)
   const [showDevTools, setShowDevTools] = useState(false);
   const showDevToolsRef = useRef(false);
@@ -83,6 +87,9 @@ function App() {
     invoke<ApiKeyStatus>("get_api_key_status").then(setApiKeyStatus);
     invoke<ProviderInfo[]>("get_available_providers").then(setProviders);
     invoke<TranscriptionSettings>("get_transcription_settings").then(setTranscriptionSettings);
+    invoke<boolean>("get_open_on_login")
+      .then(setOpenOnLogin)
+      .catch(() => {});
 
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
@@ -110,7 +117,7 @@ function App() {
         }
       } else if (showDevToolsRef.current) {
         // Dev tools open: keep window as-is so devs can inspect while unfocused
-      } else if (showSettingsRef.current) {
+      } else if (showSettingsRef.current && !suppressBlurRef.current) {
         // Window lost focus while settings open: discard and reset
         setShowSettings(false);
         setShortcutError("");
@@ -353,6 +360,22 @@ function App() {
     }
   };
 
+  const handleOpenOnLoginToggle = async () => {
+    // Temporarily suppress the blur handler — macOS may briefly steal
+    // focus while modifying the LaunchAgent plist, which would otherwise
+    // close settings and reposition the window.
+    suppressBlurRef.current = true;
+    try {
+      const result = await invoke<boolean>("set_open_on_login", { enabled: !openOnLogin });
+      setOpenOnLogin(result);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      suppressBlurRef.current = false;
+    }
+  };
+
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -495,6 +518,18 @@ function App() {
               onClear={() => handleClearApiKey("groq")}
             />
           </CollapsibleSection>
+        </div>
+
+        <div className="open-on-login-row">
+          <span className="open-on-login-label">Open on Login</span>
+          <button
+            className={`toggle-switch ${openOnLogin ? "active" : ""}`}
+            onClick={handleOpenOnLoginToggle}
+            role="switch"
+            aria-checked={openOnLogin}
+          >
+            <span className="toggle-knob" />
+          </button>
         </div>
 
         <div className="hint">Settings</div>
