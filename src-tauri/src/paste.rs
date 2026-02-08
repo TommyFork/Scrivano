@@ -1,6 +1,15 @@
 use std::io::Write;
 use std::process::Command;
 
+/// Read the current clipboard contents (plain text) via pbpaste.
+/// Returns an empty string if the clipboard is empty or contains non-text data.
+fn get_clipboard() -> String {
+    Command::new("pbpaste")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let mut child = Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
@@ -139,13 +148,29 @@ pub fn activate_app_fast(bundle_id: &str) -> Result<(), String> {
 }
 
 pub fn set_clipboard_and_paste(text: &str) -> Result<(), String> {
+    let previous = get_clipboard();
     copy_to_clipboard(text)?;
-    simulate_cmd_v()
+
+    let result = simulate_cmd_v();
+
+    // Give the paste a moment to complete, then restore the previous clipboard
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = copy_to_clipboard(&previous);
+
+    result
 }
 
 /// Paste text to a specific app (activates it first)
 pub fn paste_to_app(text: &str, bundle_id: &str) -> Result<(), String> {
+    let previous = get_clipboard();
     copy_to_clipboard(text)?;
     activate_app(bundle_id)?;
-    simulate_cmd_v()
+
+    let result = simulate_cmd_v();
+
+    // Give the paste a moment to complete, then restore the previous clipboard
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = copy_to_clipboard(&previous);
+
+    result
 }

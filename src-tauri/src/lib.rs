@@ -684,7 +684,9 @@ async fn handle_recording_stop(
             if !new_recording_active() {
                 destroy_indicator_window(&app);
 
-                // Paste to the original app (this will re-activate it)
+                // Paste to the original app (this will re-activate it).
+                // The paste functions save and restore the clipboard so the
+                // transcription text does not remain in the user's clipboard.
                 let paste_result = if let Some(ref bundle_id) = original_app {
                     paste::paste_to_app(&text, bundle_id)
                 } else {
