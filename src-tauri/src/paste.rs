@@ -1,6 +1,15 @@
 use std::io::Write;
 use std::process::Command;
 
+/// Read the current clipboard contents (plain text) via pbpaste.
+/// Returns an empty string if the clipboard is empty or contains non-text data.
+fn get_clipboard() -> String {
+    Command::new("pbpaste")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
 pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     let mut child = Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
@@ -18,6 +27,105 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Simulate Cmd+V keystroke using CoreGraphics events.
+/// Only requires Accessibility permission (no Automation/osascript needed).
+#[cfg(target_os = "macos")]
+fn simulate_cmd_v() -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
+        .map_err(|_| "Failed to create CGEventSource".to_string())?;
+
+    // Key code 9 = 'V' on macOS
+    let key_down = CGEvent::new_keyboard_event(source.clone(), 9, true)
+        .map_err(|_| "Failed to create key down event".to_string())?;
+    let key_up = CGEvent::new_keyboard_event(source, 9, false)
+        .map_err(|_| "Failed to create key up event".to_string())?;
+
+    key_down.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_up.set_flags(CGEventFlags::CGEventFlagCommand);
+
+    key_down.post(CGEventTapLocation::HID);
+    key_up.post(CGEventTapLocation::HID);
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn simulate_cmd_v() -> Result<(), String> {
+    Err("Paste simulation not supported on this platform".to_string())
+}
+
+/// Activate an application by bundle identifier using NSRunningApplication.
+/// Only requires Accessibility permission (no Automation/osascript needed).
+#[cfg(target_os = "macos")]
+fn activate_app_native(bundle_id: &str) -> Result<(), String> {
+    use core_foundation::base::TCFType;
+    use core_foundation::string::CFString;
+    use std::ffi::c_void;
+
+    #[link(name = "objc")]
+    extern "C" {
+        fn objc_getClass(name: *const std::os::raw::c_char) -> *mut c_void;
+        fn sel_registerName(name: *const std::os::raw::c_char) -> *mut c_void;
+        fn objc_msgSend(obj: *mut c_void, sel: *mut c_void) -> *mut c_void;
+    }
+
+    let cls = unsafe { objc_getClass(c"NSRunningApplication".as_ptr()) };
+    if cls.is_null() {
+        return Err("Failed to get NSRunningApplication class".to_string());
+    }
+
+    // CFString is toll-free bridged with NSString
+    let cf_bundle_id = CFString::new(bundle_id);
+    let ns_bundle_id = cf_bundle_id.as_concrete_TypeRef() as *mut c_void;
+    if ns_bundle_id.is_null() {
+        return Err(format!(
+            "Failed to create NSString for bundle ID: {}",
+            bundle_id
+        ));
+    }
+
+    // [NSRunningApplication runningApplicationsWithBundleIdentifier:]
+    // Cast function item to fn pointer, then transmute to the required signature
+    let apps = unsafe {
+        let send_with_id: unsafe extern "C" fn(
+            *mut c_void,
+            *mut c_void,
+            *mut c_void,
+        ) -> *mut c_void = std::mem::transmute(
+            objc_msgSend as unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void,
+        );
+        send_with_id(
+            cls,
+            sel_registerName(c"runningApplicationsWithBundleIdentifier:".as_ptr()),
+            ns_bundle_id,
+        )
+    };
+    if apps.is_null() {
+        return Err(format!("No running apps found for {}", bundle_id));
+    }
+
+    // [apps firstObject]
+    let app = unsafe { objc_msgSend(apps, sel_registerName(c"firstObject".as_ptr())) };
+    if app.is_null() {
+        return Err(format!("App {} is not running", bundle_id));
+    }
+
+    // [app activateWithOptions:NSApplicationActivateIgnoringOtherApps]
+    // NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2
+    unsafe {
+        let send_with_opts: unsafe extern "C" fn(*mut c_void, *mut c_void, u64) -> *mut c_void =
+            std::mem::transmute(
+                objc_msgSend as unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void,
+            );
+        send_with_opts(app, sel_registerName(c"activateWithOptions:".as_ptr()), 2);
+    }
+
+    Ok(())
+}
+
 /// Activate an application by its bundle identifier
 pub fn activate_app(bundle_id: &str) -> Result<(), String> {
     activate_app_fast(bundle_id)?;
@@ -28,58 +136,41 @@ pub fn activate_app(bundle_id: &str) -> Result<(), String> {
 
 /// Activate an application without waiting — use when restoring focus, not before pasting
 pub fn activate_app_fast(bundle_id: &str) -> Result<(), String> {
-    // Validate bundle_id to prevent AppleScript injection (should only contain [a-zA-Z0-9.-])
-    if !bundle_id
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+    #[cfg(target_os = "macos")]
     {
-        return Err(format!("Invalid bundle identifier: {}", bundle_id));
+        activate_app_native(bundle_id)
     }
-
-    let script = format!(r#"tell application id "{}" to activate"#, bundle_id);
-
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .output()
-        .map_err(|e| format!("Failed to activate app: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "AppleScript error: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = bundle_id;
+        Ok(())
     }
-
-    Ok(())
-}
-
-/// Simulate a Cmd+V paste via AppleScript
-fn simulate_paste() -> Result<(), String> {
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(r#"tell application "System Events" to keystroke "v" using command down"#)
-        .output()
-        .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "AppleScript error: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    Ok(())
 }
 
 pub fn set_clipboard_and_paste(text: &str) -> Result<(), String> {
+    let previous = get_clipboard();
     copy_to_clipboard(text)?;
-    simulate_paste()
+
+    let result = simulate_cmd_v();
+
+    // Give the paste a moment to complete, then restore the previous clipboard
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = copy_to_clipboard(&previous);
+
+    result
 }
 
 /// Paste text to a specific app (activates it first)
 pub fn paste_to_app(text: &str, bundle_id: &str) -> Result<(), String> {
+    let previous = get_clipboard();
     copy_to_clipboard(text)?;
     activate_app(bundle_id)?;
-    simulate_paste()
+
+    let result = simulate_cmd_v();
+
+    // Give the paste a moment to complete, then restore the previous clipboard
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = copy_to_clipboard(&previous);
+
+    result
 }

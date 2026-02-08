@@ -61,7 +61,7 @@ Window detection uses `__TAURI_INTERNALS__.metadata.currentWindow.label` (not qu
 ### Recording Flow
 1. User presses shortcut → `lib.rs` saves frontmost app bundle ID via `cursor.rs`
 2. `audio.rs` starts cpal recording → writes WAV to `/tmp/scrivano_recording.wav`
-3. Indicator window created/shown near cursor → original app re-activated via AppleScript (`paste.rs`) to prevent focus steal
+3. Indicator window created/shown near cursor → original app re-activated via NSRunningApplication (`paste.rs`) to prevent focus steal
 4. Audio levels emitted every 512 samples as `audio-levels` event
 5. User releases shortcut → recording stops → `transcription.rs` sends WAV to Whisper API
 6. `paste.rs` re-activates original app → sets clipboard → simulates Cmd+V paste
@@ -77,11 +77,11 @@ Uses Tauri global events (`app.emit()`, not `window.emit()`). Key events: `recor
 | `transcription.rs` | OpenAI/Groq Whisper API client, hallucination filtering |
 | `settings.rs` | JSON settings persistence (`~/.config/scrivano/settings.json`) |
 | `keychain.rs` | macOS Keychain storage for API keys (service: "scrivano") |
-| `paste.rs` | Clipboard (pbcopy), AppleScript paste automation, app activation |
+| `paste.rs` | Clipboard (pbcopy), native paste simulation (CGEvent Cmd+V), app activation (NSRunningApplication) |
 | `cursor.rs` | Mouse position (Core Graphics), frontmost app detection (NSWorkspace), accessibility API |
 
 ### Key Gotchas
 - **Accessibility permission**: `AXIsProcessTrustedWithOptions` with prompt must only be called once at startup, never on every shortcut press. Use `AXIsProcessTrustedWithOptions(null)` for runtime checks.
 - **Whisper hallucinations**: Always pass `language=en` to reduce "you"/"Thank you" on silence/short audio.
-- **Focus stealing**: Creating a Tauri window steals focus on macOS even with `focused(false)`. Must immediately re-activate the original app via AppleScript after window creation.
-- **macOS permissions needed**: Microphone, Accessibility (System Settings), Automation (AppleScript). In dev mode, grant accessibility to the dev binary, not a .app bundle.
+- **Focus stealing**: Creating a Tauri window steals focus on macOS even with `focused(false)`. Must immediately re-activate the original app via NSRunningApplication after window creation.
+- **macOS permissions needed**: Microphone, Accessibility (System Settings). In dev mode, grant accessibility to the dev binary, not a .app bundle. Automation (AppleScript) is no longer required — paste and app activation use native APIs (CGEvent, NSRunningApplication).

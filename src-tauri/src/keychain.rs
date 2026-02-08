@@ -26,6 +26,7 @@ pub fn delete_api_key(provider: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to delete API key from keychain: {}", e))
 }
 
+#[allow(dead_code)] // used in tests
 pub fn has_api_key(provider: &str) -> bool {
     get_api_key(provider).is_some()
 }

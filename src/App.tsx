@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -8,62 +8,28 @@ import {
   type ShortcutRecorder,
   type KeyboardEventLike,
 } from "./shortcutUtils";
+import { CollapsibleSection } from "./components/CollapsibleSection";
+import { ApiKeyEditor } from "./components/ApiKeyEditor";
+import type {
+  ShortcutInfo,
+  ApiKeyStatus,
+  ProviderInfo,
+  TranscriptionSettings,
+  AudioDeviceInfo,
+  SectionId,
+} from "./types";
 
-interface ShortcutInfo {
-  modifiers: string[];
-  key: string;
-  display: string;
-}
-
-interface ApiKeyStatus {
-  openai_configured: boolean;
-  groq_configured: boolean;
-  openai_source: string | null;
-  groq_source: string | null;
-}
-
-interface ProviderInfo {
-  id: string;
-  name: string;
-  model: string;
-  available: boolean;
-}
-
-interface TranscriptionSettings {
-  provider: string;
-  model: string;
-}
-
-type SectionId = "model" | "shortcut" | "apikeys";
+// Dev tools - only loaded in development builds
+const DevToolsModule = import.meta.env.DEV
+  ? await import("./DevTools").catch((err) => {
+      console.error("[DevTools] Failed to load:", err);
+      return null;
+    })
+  : null;
 
 const STATUS_DISPLAY_DURATION = 1500;
-const SETTINGS_HEIGHT = 520;
+const SETTINGS_HEIGHT = 580;
 const MAIN_HEIGHT = 340;
-
-function CollapsibleSection({
-  id,
-  title,
-  openSection,
-  onToggle,
-  children,
-}: {
-  id: SectionId;
-  title: string;
-  openSection: SectionId | null;
-  onToggle: (id: SectionId) => void;
-  children: React.ReactNode;
-}) {
-  const isOpen = openSection === id;
-  return (
-    <div className="collapsible-section">
-      <button className="section-header" onClick={() => onToggle(id)}>
-        <span className="section-title">{title}</span>
-        <span className={`section-chevron ${isOpen ? "open" : ""}`}>&#x25B8;</span>
-      </button>
-      {isOpen && <div className="section-body">{children}</div>}
-    </div>
-  );
-}
 
 function App() {
   const [text, setText] = useState("");
@@ -86,21 +52,39 @@ function App() {
 
   // API Keys state
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
-  const [openaiKeyInput, setOpenaiKeyInput] = useState("");
-  const [groqKeyInput, setGroqKeyInput] = useState("");
-  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [showGroqKey, setShowGroqKey] = useState(false);
   const [apiKeySaving, setApiKeySaving] = useState(false);
   const [editingProvider, setEditingProvider] = useState<"openai" | "groq" | null>(null);
 
   // Provider/Model state
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings | null>(null);
+  const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings | null>(
+    null,
+  );
 
-  // Keep ref in sync with state
+  // Audio input device state
+  const [audioDevices, setAudioDevices] = useState<AudioDeviceInfo[]>([]);
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState<string | null>(null);
+  const [isPreviewActive, setIsPreviewActive] = useState(false);
+  const [previewLevels, setPreviewLevels] = useState<number[]>([0.15, 0.15, 0.15]);
+  const previewActiveRef = useRef(false);
+
+  // Open on Login state
+  const [openOnLogin, setOpenOnLogin] = useState(false);
+  const suppressBlurRef = useRef(false);
+
+  // Dev tools state (only used in dev mode)
+  const [showDevTools, setShowDevTools] = useState(false);
+  const showDevToolsRef = useRef(false);
+  const devEventLog = DevToolsModule?.useEventLog();
+
+  // Keep refs in sync with state
   useEffect(() => {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
+
+  useEffect(() => {
+    showDevToolsRef.current = showDevTools;
+  }, [showDevTools]);
 
   useEffect(() => {
     invoke<string>("get_transcription").then((t) => {
@@ -111,6 +95,11 @@ function App() {
     invoke<ApiKeyStatus>("get_api_key_status").then(setApiKeyStatus);
     invoke<ProviderInfo[]>("get_available_providers").then(setProviders);
     invoke<TranscriptionSettings>("get_transcription_settings").then(setTranscriptionSettings);
+    invoke<AudioDeviceInfo[]>("list_audio_input_devices").then(setAudioDevices);
+    invoke<string | null>("get_audio_input_device").then(setSelectedAudioDevice);
+    invoke<boolean>("get_open_on_login")
+      .then(setOpenOnLogin)
+      .catch(() => {});
 
     const unlisteners = [
       listen<boolean>("recording-status", (e) => {
@@ -127,6 +116,11 @@ function App() {
         setError(e.payload);
         setStatus("Error");
       }),
+      listen<number[]>("audio-preview-levels", (e) => {
+        if (previewActiveRef.current) {
+          setPreviewLevels(e.payload);
+        }
+      }),
     ];
 
     // Auto-focus textarea when window gains focus, reset settings on blur
@@ -136,15 +130,21 @@ function App() {
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
-      } else if (showSettingsRef.current) {
+      } else if (showDevToolsRef.current) {
+        // Dev tools open: keep window as-is so devs can inspect while unfocused
+      } else if (showSettingsRef.current && !suppressBlurRef.current) {
         // Window lost focus while settings open: discard and reset
         setShowSettings(false);
         setShortcutError("");
         setIsRecordingShortcutActive(false);
         setLiveDisplay("");
         setEditingProvider(null);
-        setOpenaiKeyInput("");
-        setGroqKeyInput("");
+        if (previewActiveRef.current) {
+          previewActiveRef.current = false;
+          setIsPreviewActive(false);
+          setPreviewLevels([0.15, 0.15, 0.15]);
+          invoke("stop_audio_preview").catch(() => {});
+        }
         invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
       }
     });
@@ -202,8 +202,12 @@ function App() {
     setIsRecordingShortcutActive(false);
     setLiveDisplay("");
     setEditingProvider(null);
-    setOpenaiKeyInput("");
-    setGroqKeyInput("");
+    if (previewActiveRef.current) {
+      previewActiveRef.current = false;
+      setIsPreviewActive(false);
+      setPreviewLevels([0.15, 0.15, 0.15]);
+      invoke("stop_audio_preview").catch(() => {});
+    }
     invoke("resize_window", { height: MAIN_HEIGHT }).catch(() => {});
   }, []);
 
@@ -261,48 +265,54 @@ function App() {
     }
   }, []);
 
-  const handleShortcutKeyDown = useCallback((e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleShortcutKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!isRecordingShortcutActive) {
-      setShortcutError("");
-      setLiveDisplay("");
-      recorderRef.current.start();
-      setIsRecordingShortcutActive(true);
-    }
+      if (!isRecordingShortcutActive) {
+        setShortcutError("");
+        setLiveDisplay("");
+        recorderRef.current.start();
+        setIsRecordingShortcutActive(true);
+      }
 
-    const keyEvent: KeyboardEventLike = {
-      code: e.code,
-      key: e.key,
-      metaKey: e.metaKey,
-      ctrlKey: e.ctrlKey,
-      altKey: e.altKey,
-      shiftKey: e.shiftKey,
-    };
+      const keyEvent: KeyboardEventLike = {
+        code: e.code,
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+      };
 
-    recorderRef.current.handleKeyDown(keyEvent);
-    syncRecorderState();
-  }, [isRecordingShortcutActive, syncRecorderState]);
+      recorderRef.current.handleKeyDown(keyEvent);
+      syncRecorderState();
+    },
+    [isRecordingShortcutActive, syncRecorderState],
+  );
 
-  const handleShortcutKeyUp = useCallback((e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleShortcutKeyUp = useCallback(
+    (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!isRecordingShortcutActive) return;
+      if (!isRecordingShortcutActive) return;
 
-    const keyEvent: KeyboardEventLike = {
-      code: e.code,
-      key: e.key,
-      metaKey: e.metaKey,
-      ctrlKey: e.ctrlKey,
-      altKey: e.altKey,
-      shiftKey: e.shiftKey,
-    };
+      const keyEvent: KeyboardEventLike = {
+        code: e.code,
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+      };
 
-    recorderRef.current.handleKeyUp(keyEvent);
-    syncRecorderState();
-  }, [isRecordingShortcutActive, syncRecorderState]);
+      recorderRef.current.handleKeyUp(keyEvent);
+      syncRecorderState();
+    },
+    [isRecordingShortcutActive, syncRecorderState],
+  );
 
   const cancelRecordingShortcut = useCallback(() => {
     recorderRef.current.cancel();
@@ -319,18 +329,14 @@ function App() {
 
   // ── API Key handlers ──
 
-  const handleSaveApiKey = async (provider: "openai" | "groq") => {
+  const handleSaveApiKey = async (provider: "openai" | "groq", apiKey: string) => {
     setApiKeySaving(true);
     try {
-      const keyValue = provider === "openai" ? openaiKeyInput : groqKeyInput;
       const result = await invoke<ApiKeyStatus>("set_api_key", {
         provider,
-        apiKey: keyValue,
+        apiKey,
       });
       setApiKeyStatus(result);
-
-      if (provider === "openai") setOpenaiKeyInput("");
-      else setGroqKeyInput("");
       setEditingProvider(null);
 
       const updatedProviders = await invoke<ProviderInfo[]>("get_available_providers");
@@ -356,7 +362,7 @@ function App() {
       setProviders(updatedProviders);
 
       if (transcriptionSettings?.provider === provider) {
-        const otherProvider = updatedProviders.find(p => p.available && p.id !== provider);
+        const otherProvider = updatedProviders.find((p) => p.available && p.id !== provider);
         if (otherProvider) {
           await handleProviderChange(otherProvider.id);
         }
@@ -381,6 +387,59 @@ function App() {
     }
   };
 
+  // ── Audio input device handlers ──
+
+  const handleAudioDeviceChange = async (deviceName: string | null) => {
+    try {
+      await invoke("set_audio_input_device", { deviceName });
+      setSelectedAudioDevice(deviceName);
+      // If preview is active, restart it with the new device
+      if (previewActiveRef.current) {
+        await invoke("stop_audio_preview");
+        await invoke("start_audio_preview");
+      }
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const toggleAudioPreview = async () => {
+    try {
+      if (previewActiveRef.current) {
+        previewActiveRef.current = false;
+        setIsPreviewActive(false);
+        setPreviewLevels([0.15, 0.15, 0.15]);
+        await invoke("stop_audio_preview");
+      } else {
+        previewActiveRef.current = true;
+        setIsPreviewActive(true);
+        await invoke("start_audio_preview");
+      }
+      setError("");
+    } catch (e) {
+      previewActiveRef.current = false;
+      setIsPreviewActive(false);
+      setError(String(e));
+    }
+  };
+
+  const handleOpenOnLoginToggle = async () => {
+    // Temporarily suppress the blur handler — macOS may briefly steal
+    // focus while modifying the LaunchAgent plist, which would otherwise
+    // close settings and reposition the window.
+    suppressBlurRef.current = true;
+    try {
+      const result = await invoke<boolean>("set_open_on_login", { enabled: !openOnLogin });
+      setOpenOnLogin(result);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      suppressBlurRef.current = false;
+    }
+  };
+
   const hasAnyApiKey = apiKeyStatus?.openai_configured || apiKeyStatus?.groq_configured;
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -395,6 +454,15 @@ function App() {
             &#x2190;
           </button>
           <span className="status-text">Configuration</span>
+          {import.meta.env.DEV && (
+            <button
+              className="dev-badge"
+              onClick={() => setShowDevTools(true)}
+              title="Open Dev Tools"
+            >
+              DEV
+            </button>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}
@@ -441,9 +509,7 @@ function App() {
             openSection={openSection}
             onToggle={handleSectionToggle}
           >
-            <p className="settings-description">
-              Press and hold to record.
-            </p>
+            <p className="settings-description">Press and hold to record.</p>
 
             {shortcutError && (
               <div className="shortcut-error-box">
@@ -469,14 +535,61 @@ function App() {
               }}
             >
               {isRecordingShortcutActive ? (
-                <span className="shortcut-recording-text">
-                  {liveDisplay || "Press keys..."}
-                </span>
+                <span className="shortcut-recording-text">{liveDisplay || "Press keys..."}</span>
               ) : (
                 <>
-                  <span className="shortcut-current">{currentShortcut?.display || "\u2318\u21E7Space"}</span>
+                  <span className="shortcut-current">
+                    {currentShortcut?.display || "\u2318\u21E7Space"}
+                  </span>
                   <span className="shortcut-change-hint">Click to change</span>
                 </>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          {/* ── Audio Input Section ── */}
+          <CollapsibleSection
+            id="audio"
+            title="Audio Input"
+            openSection={openSection}
+            onToggle={handleSectionToggle}
+          >
+            <p className="settings-description">Select a microphone for recording</p>
+            <div className="audio-device-select-wrapper">
+              <select
+                className="audio-device-select"
+                value={selectedAudioDevice ?? ""}
+                onChange={(e) => handleAudioDeviceChange(e.target.value || null)}
+              >
+                <option value="">System Default</option>
+                {audioDevices.map((device) => (
+                  <option key={device.name} value={device.name}>
+                    {device.name}
+                    {device.is_default ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="audio-preview-section">
+              <div className="audio-preview-header">
+                <span className="audio-preview-label">Level Monitor</span>
+                <button className="btn small" onClick={toggleAudioPreview}>
+                  {isPreviewActive ? "Stop" : "Test"}
+                </button>
+              </div>
+              <div className="audio-level-meter">
+                {previewLevels.map((level, i) => (
+                  <div key={i} className="audio-level-bar-track">
+                    <div
+                      className={`audio-level-bar-fill ${isPreviewActive ? "active" : ""}`}
+                      style={{ width: `${(isPreviewActive ? level : 0.15) * 100}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+              {isPreviewActive && (
+                <p className="audio-preview-hint">Speak to see your audio levels</p>
               )}
             </div>
           </CollapsibleSection>
@@ -490,159 +603,63 @@ function App() {
           >
             <p className="settings-description">Manage your API keys</p>
 
-            {/* OpenAI Key */}
-            <div className="api-key-row">
-              <div className="api-key-header">
-                <span className="api-key-label">OpenAI</span>
-                {apiKeyStatus?.openai_configured && (
-                  <span className="api-key-status configured">
-                    {apiKeyStatus.openai_source === "env" ? "from env" : "configured"}
-                  </span>
-                )}
-              </div>
-              {apiKeyStatus?.openai_configured && editingProvider !== "openai" ? (
-                <div className="api-key-input-row">
-                  <div className="api-key-display">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
-                  <button
-                    className="btn small"
-                    onClick={() => { setOpenaiKeyInput(""); setEditingProvider("openai"); }}
-                  >
-                    Edit
-                  </button>
-                  {apiKeyStatus.openai_source === "keychain" && (
-                    <button
-                      className="api-key-clear"
-                      onClick={() => handleClearApiKey("openai")}
-                      disabled={apiKeySaving}
-                      title="Remove key"
-                    >
-                      &#xD7;
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="api-key-input-row">
-                  <div className="api-key-input-wrapper">
-                    <input
-                      type={showOpenaiKey ? "text" : "password"}
-                      className="api-key-input"
-                      placeholder="sk-..."
-                      value={openaiKeyInput}
-                      onChange={(e) => setOpenaiKeyInput(e.target.value)}
-                      autoFocus={editingProvider === "openai"}
-                    />
-                    {openaiKeyInput && (
-                      <button
-                        className="api-key-eye"
-                        onClick={() => setShowOpenaiKey(!showOpenaiKey)}
-                        title={showOpenaiKey ? "Hide" : "Show"}
-                        tabIndex={-1}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                          {showOpenaiKey && <line x1="1" y1="1" x2="23" y2="23" />}
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => handleSaveApiKey("openai")}
-                    disabled={apiKeySaving || !openaiKeyInput.trim()}
-                  >
-                    Save
-                  </button>
-                  {editingProvider === "openai" && (
-                    <button
-                      className="btn small"
-                      onClick={() => { setOpenaiKeyInput(""); setEditingProvider(null); }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <ApiKeyEditor
+              label="OpenAI"
+              placeholder="sk-..."
+              configured={apiKeyStatus?.openai_configured ?? false}
+              saving={apiKeySaving}
+              isEditing={editingProvider === "openai"}
+              onStartEdit={() => setEditingProvider("openai")}
+              onCancelEdit={() => setEditingProvider(null)}
+              onSave={(key) => handleSaveApiKey("openai", key)}
+              onClear={() => handleClearApiKey("openai")}
+            />
 
-            {/* Groq Key */}
-            <div className="api-key-row">
-              <div className="api-key-header">
-                <span className="api-key-label">Groq</span>
-                {apiKeyStatus?.groq_configured && (
-                  <span className="api-key-status configured">
-                    {apiKeyStatus.groq_source === "env" ? "from env" : "configured"}
-                  </span>
-                )}
-              </div>
-              {apiKeyStatus?.groq_configured && editingProvider !== "groq" ? (
-                <div className="api-key-input-row">
-                  <div className="api-key-display">&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;&#x2022;</div>
-                  <button
-                    className="btn small"
-                    onClick={() => { setGroqKeyInput(""); setEditingProvider("groq"); }}
-                  >
-                    Edit
-                  </button>
-                  {apiKeyStatus.groq_source === "keychain" && (
-                    <button
-                      className="api-key-clear"
-                      onClick={() => handleClearApiKey("groq")}
-                      disabled={apiKeySaving}
-                      title="Remove key"
-                    >
-                      &#xD7;
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="api-key-input-row">
-                  <div className="api-key-input-wrapper">
-                    <input
-                      type={showGroqKey ? "text" : "password"}
-                      className="api-key-input"
-                      placeholder="gsk_..."
-                      value={groqKeyInput}
-                      onChange={(e) => setGroqKeyInput(e.target.value)}
-                      autoFocus={editingProvider === "groq"}
-                    />
-                    {groqKeyInput && (
-                      <button
-                        className="api-key-eye"
-                        onClick={() => setShowGroqKey(!showGroqKey)}
-                        title={showGroqKey ? "Hide" : "Show"}
-                        tabIndex={-1}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                          {showGroqKey && <line x1="1" y1="1" x2="23" y2="23" />}
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    className="btn small"
-                    onClick={() => handleSaveApiKey("groq")}
-                    disabled={apiKeySaving || !groqKeyInput.trim()}
-                  >
-                    Save
-                  </button>
-                  {editingProvider === "groq" && (
-                    <button
-                      className="btn small"
-                      onClick={() => { setGroqKeyInput(""); setEditingProvider(null); }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <ApiKeyEditor
+              label="Groq"
+              placeholder="gsk_..."
+              configured={apiKeyStatus?.groq_configured ?? false}
+              saving={apiKeySaving}
+              isEditing={editingProvider === "groq"}
+              onStartEdit={() => setEditingProvider("groq")}
+              onCancelEdit={() => setEditingProvider(null)}
+              onSave={(key) => handleSaveApiKey("groq", key)}
+              onClear={() => handleClearApiKey("groq")}
+            />
           </CollapsibleSection>
         </div>
 
+        <div className="open-on-login-row">
+          <span className="open-on-login-label">Open on Login</span>
+          <button
+            className={`toggle-switch ${openOnLogin ? "active" : ""}`}
+            onClick={handleOpenOnLoginToggle}
+            role="switch"
+            aria-checked={openOnLogin}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
         <div className="hint">Settings</div>
+
+        {import.meta.env.DEV && DevToolsModule && devEventLog && (
+          <DevToolsModule.DevTools
+            isOpen={showDevTools}
+            onClose={() => setShowDevTools(false)}
+            eventLog={devEventLog.eventLog}
+            onClearLog={devEventLog.clearLog}
+            appState={{
+              isRecording,
+              status,
+              textLength: text.length,
+              hasApiKey: !!hasAnyApiKey,
+              provider: transcriptionSettings?.provider ?? null,
+              shortcut: currentShortcut?.display ?? null,
+              error,
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -656,6 +673,15 @@ function App() {
       <div className="header">
         <div className={`status-indicator ${isRecording ? "recording" : ""}`} />
         <span className="status-text">{status}</span>
+        {import.meta.env.DEV && (
+          <button
+            className="dev-badge"
+            onClick={() => setShowDevTools(true)}
+            title="Open Dev Tools"
+          >
+            DEV
+          </button>
+        )}
         <button className="settings-btn" onClick={openSettings} title="Settings">
           &#x2699;
         </button>
@@ -688,15 +714,37 @@ function App() {
           </div>
 
           <div className="actions">
-            <button onClick={handleCopy} className="btn" disabled={!text}>Copy</button>
+            <button onClick={handleCopy} className="btn" disabled={!text}>
+              Copy
+            </button>
           </div>
 
           {transcriptionSettings && (
             <div className="hint">
-              <button className="current-model" onClick={openSettings}>{transcriptionSettings.model}</button>
+              <button className="current-model" onClick={openSettings}>
+                {transcriptionSettings.model}
+              </button>
             </div>
           )}
         </>
+      )}
+
+      {import.meta.env.DEV && DevToolsModule && devEventLog && (
+        <DevToolsModule.DevTools
+          isOpen={showDevTools}
+          onClose={() => setShowDevTools(false)}
+          eventLog={devEventLog.eventLog}
+          onClearLog={devEventLog.clearLog}
+          appState={{
+            isRecording,
+            status,
+            textLength: text.length,
+            hasApiKey: !!hasAnyApiKey,
+            provider: transcriptionSettings?.provider ?? null,
+            shortcut: currentShortcut?.display ?? null,
+            error,
+          }}
+        />
       )}
     </div>
   );
