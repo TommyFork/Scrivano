@@ -18,8 +18,6 @@ interface ShortcutInfo {
 interface ApiKeyStatus {
   openai_configured: boolean;
   groq_configured: boolean;
-  openai_source: string | null;
-  groq_source: string | null;
 }
 
 interface ProviderInfo {
@@ -495,9 +493,7 @@ function App() {
               <div className="api-key-header">
                 <span className="api-key-label">OpenAI</span>
                 {apiKeyStatus?.openai_configured && (
-                  <span className="api-key-status configured">
-                    {apiKeyStatus.openai_source === "env" ? "from env" : "configured"}
-                  </span>
+                  <span className="api-key-status configured">configured</span>
                 )}
               </div>
               {apiKeyStatus?.openai_configured && editingProvider !== "openai" ? (
@@ -509,16 +505,14 @@ function App() {
                   >
                     Edit
                   </button>
-                  {apiKeyStatus.openai_source === "keychain" && (
-                    <button
-                      className="api-key-clear"
-                      onClick={() => handleClearApiKey("openai")}
-                      disabled={apiKeySaving}
-                      title="Remove key"
-                    >
-                      &#xD7;
-                    </button>
-                  )}
+                  <button
+                    className="api-key-clear"
+                    onClick={() => handleClearApiKey("openai")}
+                    disabled={apiKeySaving}
+                    title="Remove key"
+                  >
+                    &#xD7;
+                  </button>
                 </div>
               ) : (
                 <div className="api-key-input-row">
@@ -570,9 +564,7 @@ function App() {
               <div className="api-key-header">
                 <span className="api-key-label">Groq</span>
                 {apiKeyStatus?.groq_configured && (
-                  <span className="api-key-status configured">
-                    {apiKeyStatus.groq_source === "env" ? "from env" : "configured"}
-                  </span>
+                  <span className="api-key-status configured">configured</span>
                 )}
               </div>
               {apiKeyStatus?.groq_configured && editingProvider !== "groq" ? (
@@ -584,16 +576,14 @@ function App() {
                   >
                     Edit
                   </button>
-                  {apiKeyStatus.groq_source === "keychain" && (
-                    <button
-                      className="api-key-clear"
-                      onClick={() => handleClearApiKey("groq")}
-                      disabled={apiKeySaving}
-                      title="Remove key"
-                    >
-                      &#xD7;
-                    </button>
-                  )}
+                  <button
+                    className="api-key-clear"
+                    onClick={() => handleClearApiKey("groq")}
+                    disabled={apiKeySaving}
+                    title="Remove key"
+                  >
+                    &#xD7;
+                  </button>
                 </div>
               ) : (
                 <div className="api-key-input-row">

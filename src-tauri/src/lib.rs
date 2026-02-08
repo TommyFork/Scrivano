@@ -211,25 +211,19 @@ struct ApiKeyStatus {
 }
 
 fn get_api_key_status_internal() -> ApiKeyStatus {
-    let openai_from_keychain = keychain::has_api_key("openai");
-    let openai_from_env = std::env::var("OPENAI_API_KEY").is_ok();
-    let groq_from_keychain = keychain::has_api_key("groq");
-    let groq_from_env = std::env::var("GROQ_API_KEY").is_ok();
+    let openai_configured = keychain::has_api_key("openai");
+    let groq_configured = keychain::has_api_key("groq");
 
     ApiKeyStatus {
-        openai_configured: openai_from_keychain || openai_from_env,
-        groq_configured: groq_from_keychain || groq_from_env,
-        openai_source: if openai_from_keychain {
+        openai_configured,
+        groq_configured,
+        openai_source: if openai_configured {
             Some("keychain".to_string())
-        } else if openai_from_env {
-            Some("env".to_string())
         } else {
             None
         },
-        groq_source: if groq_from_keychain {
+        groq_source: if groq_configured {
             Some("keychain".to_string())
-        } else if groq_from_env {
-            Some("env".to_string())
         } else {
             None
         },
