@@ -29,7 +29,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-autostart = "2"
-core-graphics = "0.24"
+core-graphics = "0.25"
 core-foundation = "0.10"
 cocoa = "0.26"
 time = ">=0.3.47"
