@@ -37,8 +37,8 @@ pub fn list_input_devices() -> Vec<String> {
     let mut names = Vec::new();
     if let Ok(devices) = host.input_devices() {
         for device in devices {
-            if let Ok(name) = device.name() {
-                names.push(name);
+            if let Ok(desc) = device.description() {
+                names.push(desc.name);
             }
         }
     }
@@ -48,7 +48,9 @@ pub fn list_input_devices() -> Vec<String> {
 /// Get the default input device name, if any.
 pub fn default_input_device_name() -> Option<String> {
     let host = cpal::default_host();
-    host.default_input_device().and_then(|d| d.name().ok())
+    host.default_input_device()
+        .and_then(|d| d.description().ok())
+        .map(|desc| desc.name)
 }
 
 /// Find an input device by name, falling back to the default.
@@ -58,8 +60,8 @@ fn find_input_device(device_name: Option<&str>) -> Option<cpal::Device> {
     if let Some(name) = device_name {
         if let Ok(devices) = host.input_devices() {
             for device in devices {
-                if let Ok(n) = device.name() {
-                    if n == name {
+                if let Ok(desc) = device.description() {
+                    if desc.name == name {
                         return Some(device);
                     }
                 }
@@ -132,7 +134,7 @@ fn run_recording(
         }
     };
 
-    let sample_rate = config.sample_rate().0;
+    let sample_rate = config.sample_rate();
     let channels = config.channels();
     let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
 
