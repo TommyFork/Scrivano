@@ -245,6 +245,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.devtools-log-expand {
+  color: #5a4f40;
+  flex-shrink: 0;
+  font-size: 8px;
+  margin-left: 4px;
+}
+
+.devtools-log-entry.clickable:hover .devtools-log-expand {
+  color: #c9a227;
 }
 
 .devtools-log-full {
@@ -266,6 +279,7 @@
 .event-recording .devtools-log-event { color: #c97a30; }
 .event-transcription .devtools-log-event { color: #5a9a6a; }
 .event-audio .devtools-log-event { color: #5a7a9a; }
+.event-paste .devtools-log-event { color: #9a7ac4; }
 
 /* ── State Inspector Panel ── */
 

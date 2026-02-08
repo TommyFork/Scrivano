@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type RefObject } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import "./DevTools.css";
 
 export interface EventLogEntry {
@@ -8,6 +9,7 @@ export interface EventLogEntry {
   event: string;
   payload: string;
   fullPayload: string;
+  truncated: boolean;
 }
 
 type DevTab = "events" | "state" | "mocks";
@@ -33,6 +35,16 @@ export function DevTools({ isOpen, onClose, eventLog, onClearLog, appState }: De
   const [activeTab, setActiveTab] = useState<DevTab>("events");
   const [autoScroll, setAutoScroll] = useState(true);
   const logEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Prevent the window from auto-hiding while dev tools are open
+  useEffect(() => {
+    if (isOpen) {
+      invoke("set_prevent_auto_hide", { prevent: true }).catch(() => {});
+    }
+    return () => {
+      invoke("set_prevent_auto_hide", { prevent: false }).catch(() => {});
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (autoScroll && logEndRef.current) {
@@ -106,12 +118,26 @@ function EventLogPanel({
   logEndRef: RefObject<HTMLDivElement | null>;
 }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [copyLabel, setCopyLabel] = useState("Copy All");
+
+  const handleCopyAll = useCallback(() => {
+    const text = eventLog
+      .map((e) => `[${e.timestamp}] ${e.event}: ${e.fullPayload}`)
+      .join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyLabel("Copied!");
+      setTimeout(() => setCopyLabel("Copy All"), 1200);
+    });
+  }, [eventLog]);
 
   return (
     <div className="devtools-event-panel">
       <div className="devtools-toolbar">
         <button className="devtools-btn" onClick={onClear}>
           Clear
+        </button>
+        <button className="devtools-btn" onClick={handleCopyAll} disabled={eventLog.length === 0}>
+          {copyLabel}
         </button>
         <label className="devtools-checkbox">
           <input type="checkbox" checked={autoScroll} onChange={onToggleAutoScroll} />
@@ -124,17 +150,20 @@ function EventLogPanel({
         )}
         {eventLog.map((entry) => {
           const isExpanded = expandedId === entry.id;
-          const isTruncated = entry.fullPayload.length > entry.payload.length;
+          const hasPayload = entry.fullPayload.length > 0;
           return (
             <div
               key={entry.id}
-              className={`devtools-log-entry ${getEventClass(entry.event)} ${isTruncated ? "clickable" : ""} ${isExpanded ? "expanded" : ""}`}
-              onClick={() => isTruncated && setExpandedId(isExpanded ? null : entry.id)}
+              className={`devtools-log-entry ${getEventClass(entry.event)} ${hasPayload ? "clickable" : ""} ${isExpanded ? "expanded" : ""}`}
+              onClick={() => hasPayload && setExpandedId(isExpanded ? null : entry.id)}
             >
               <div className="devtools-log-row">
                 <span className="devtools-log-time">{entry.timestamp}</span>
                 <span className="devtools-log-event">{entry.event}</span>
                 <span className="devtools-log-payload">{entry.payload}</span>
+                {hasPayload && (
+                  <span className="devtools-log-expand">{isExpanded ? "\u25BC" : "\u25B6"}</span>
+                )}
               </div>
               {isExpanded && (
                 <pre className="devtools-log-full">{entry.fullPayload}</pre>
@@ -153,6 +182,7 @@ function getEventClass(event: string): string {
   if (event === "recording-status") return "event-recording";
   if (event === "transcription") return "event-transcription";
   if (event === "audio-levels") return "event-audio";
+  if (event === "paste") return "event-paste";
   return "";
 }
 
@@ -251,7 +281,9 @@ function MockPanel() {
 // ── Event logging hook ──
 
 let nextEventId = 0;
+let audioLevelCount = 0;
 const MAX_LOG_SIZE = 200;
+const AUDIO_LEVEL_THROTTLE = 10;
 
 /**
  * Hook that subscribes to all Tauri IPC events and maintains an event log.
@@ -261,10 +293,9 @@ export function useEventLog() {
   const [eventLog, setEventLog] = useState<EventLogEntry[]>([]);
 
   const addEntry = useCallback((event: string, payload: unknown) => {
-    // Throttle audio-levels: only log every 10th one
+    // Throttle audio-levels: only log every Nth one
     if (event === "audio-levels") {
-      const id = nextEventId++;
-      if (id % 10 !== 0) return;
+      if (audioLevelCount++ % AUDIO_LEVEL_THROTTLE !== 0) return;
     }
 
     const now = new Date();
@@ -276,14 +307,15 @@ export function useEventLog() {
     } else {
       fullPayload = JSON.stringify(payload, null, 2);
     }
-    const truncated = fullPayload.length > 80
+    const isTruncated = fullPayload.length > 80;
+    const displayPayload = isTruncated
       ? fullPayload.slice(0, 80).replace(/\n/g, " ") + "..."
       : fullPayload.replace(/\n/g, " ");
 
     setEventLog((prev) => {
       const next = [
         ...prev,
-        { id: nextEventId++, timestamp, event, payload: truncated, fullPayload },
+        { id: nextEventId++, timestamp, event, payload: displayPayload, fullPayload, truncated: isTruncated },
       ];
       return next.length > MAX_LOG_SIZE ? next.slice(-MAX_LOG_SIZE) : next;
     });
@@ -297,6 +329,7 @@ export function useEventLog() {
       "audio-levels",
       "indicator-state",
       "error",
+      "paste",
     ];
 
     const unlisteners = events.map((eventName) =>
