@@ -27,6 +27,8 @@ export default [
         clearInterval: 'readonly',
         HTMLElement: 'readonly',
         HTMLTextAreaElement: 'readonly',
+        HTMLDivElement: 'readonly',
+        HTMLInputElement: 'readonly',
         MouseEvent: 'readonly',
         KeyboardEvent: 'readonly',
         MediaRecorder: 'readonly',
