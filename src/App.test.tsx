@@ -57,9 +57,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Ready")).toBeInTheDocument();
-      expect(
-        screen.getByPlaceholderText("Press ⌘⇧Space to record")
-      ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Press ⌘⇧Space to record")).toBeInTheDocument();
       expect(screen.getByText("whisper-1")).toBeInTheDocument();
     });
   });
@@ -83,18 +81,9 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(mockedListen).toHaveBeenCalledWith(
-        "recording-status",
-        expect.any(Function)
-      );
-      expect(mockedListen).toHaveBeenCalledWith(
-        "transcription",
-        expect.any(Function)
-      );
-      expect(mockedListen).toHaveBeenCalledWith(
-        "transcription-status",
-        expect.any(Function)
-      );
+      expect(mockedListen).toHaveBeenCalledWith("recording-status", expect.any(Function));
+      expect(mockedListen).toHaveBeenCalledWith("transcription", expect.any(Function));
+      expect(mockedListen).toHaveBeenCalledWith("transcription-status", expect.any(Function));
       expect(mockedListen).toHaveBeenCalledWith("error", expect.any(Function));
     });
   });
@@ -199,8 +188,7 @@ describe("App", () => {
     mockedInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_transcription") return Promise.resolve("text");
       if (cmd === "get_recording_status") return Promise.resolve(false);
-      if (cmd === "copy_to_clipboard")
-        return Promise.reject("Copy failed");
+      if (cmd === "copy_to_clipboard") return Promise.reject("Copy failed");
       return Promise.resolve("");
     });
 
@@ -234,7 +222,7 @@ describe("App", () => {
     });
   });
 
-it("updates status message after copying", async () => {
+  it("updates status message after copying", async () => {
     const user = userEvent.setup();
     mockedInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_transcription") return Promise.resolve("text");
@@ -259,6 +247,11 @@ it("updates status message after copying", async () => {
   it("hides window when Escape key is pressed", async () => {
     render(<App />);
 
+    // Wait for initial async state updates to settle
+    await waitFor(() => {
+      expect(screen.getByText("Ready")).toBeInTheDocument();
+    });
+
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(mockedInvoke).toHaveBeenCalledWith("hide_window");
@@ -266,6 +259,11 @@ it("updates status message after copying", async () => {
 
   it("does not hide window for other keys", async () => {
     render(<App />);
+
+    // Wait for initial async state updates to settle
+    await waitFor(() => {
+      expect(screen.getByText("Ready")).toBeInTheDocument();
+    });
 
     // Clear any previous calls from component mount
     mockedInvoke.mockClear();
@@ -476,10 +474,38 @@ it("updates status message after copying", async () => {
 
       // Simulate Cmd+K keydown then release
       const shortcutBox = document.querySelector(".shortcut-clickable")!;
-      fireEvent.keyDown(shortcutBox, { code: "MetaLeft", key: "Meta", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false });
-      fireEvent.keyDown(shortcutBox, { code: "KeyK", key: "k", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false });
-      fireEvent.keyUp(shortcutBox, { code: "KeyK", key: "k", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false });
-      fireEvent.keyUp(shortcutBox, { code: "MetaLeft", key: "Meta", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false });
+      fireEvent.keyDown(shortcutBox, {
+        code: "MetaLeft",
+        key: "Meta",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      });
+      fireEvent.keyDown(shortcutBox, {
+        code: "KeyK",
+        key: "k",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      });
+      fireEvent.keyUp(shortcutBox, {
+        code: "KeyK",
+        key: "k",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      });
+      fireEvent.keyUp(shortcutBox, {
+        code: "MetaLeft",
+        key: "Meta",
+        metaKey: false,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+      });
 
       // Auto-save should trigger set_shortcut
       await waitFor(() => {
