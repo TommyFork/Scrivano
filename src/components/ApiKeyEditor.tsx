@@ -40,9 +40,7 @@ export function ApiKeyEditor({
     <div className="api-key-row">
       <div className="api-key-header">
         <span className="api-key-label">{label}</span>
-        {configured && (
-          <span className="api-key-status configured">configured</span>
-        )}
+        {configured && <span className="api-key-status configured">configured</span>}
       </div>
       {configured && !isEditing ? (
         <div className="api-key-input-row">
@@ -58,12 +56,7 @@ export function ApiKeyEditor({
           >
             Edit
           </button>
-          <button
-            className="api-key-clear"
-            onClick={onClear}
-            disabled={saving}
-            title="Remove key"
-          >
+          <button className="api-key-clear" onClick={onClear} disabled={saving} title="Remove key">
             &#xD7;
           </button>
         </div>
