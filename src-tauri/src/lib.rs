@@ -95,17 +95,23 @@ fn resize_window(app: AppHandle, height: f64) {
         let width = 320.0;
         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
 
-        // Clamp position to screen bounds after resize
+        // Clamp position to screen bounds after resize.
+        // outer_position() returns physical pixels, while CGDisplay bounds
+        // are in logical points.  Multiply by the scale factor so we compare
+        // apples to apples – otherwise on Retina (2×) displays the window
+        // gets dragged toward the centre of the screen.
+        #[cfg(target_os = "macos")]
         {
             use core_graphics::display::CGDisplay;
             if let Ok(pos) = window.outer_position() {
+                let scale = window.scale_factor().unwrap_or(1.0);
                 let bounds = CGDisplay::main().bounds();
-                let screen_w = bounds.size.width as i32;
-                let screen_h = bounds.size.height as i32;
-                let width_i32 = (width as i32).max(0);
-                let height_i32 = (height as i32).max(0);
-                let x = pos.x.max(0).min(screen_w.saturating_sub(width_i32));
-                let y = pos.y.max(0).min(screen_h.saturating_sub(height_i32));
+                let screen_w = (bounds.size.width * scale) as i32;
+                let screen_h = (bounds.size.height * scale) as i32;
+                let width_phys = (width * scale) as i32;
+                let height_phys = (height * scale) as i32;
+                let x = pos.x.max(0).min(screen_w.saturating_sub(width_phys));
+                let y = pos.y.max(0).min(screen_h.saturating_sub(height_phys));
                 let _ = window.set_position(tauri::Position::Physical(
                     tauri::PhysicalPosition::new(x, y),
                 ));
