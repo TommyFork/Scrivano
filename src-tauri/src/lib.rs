@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use settings::{Settings, ShortcutConfig, TranscriptionProvider};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -97,7 +96,6 @@ fn resize_window(app: AppHandle, height: f64) {
         let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
 
         // Clamp position to screen bounds after resize
-        #[cfg(target_os = "macos")]
         {
             use core_graphics::display::CGDisplay;
             if let Ok(pos) = window.outer_position() {
@@ -365,7 +363,6 @@ fn create_indicator_window(app: &AppHandle) -> (Option<tauri::WebviewWindow>, bo
     };
 
     // Clamp to screen bounds
-    #[cfg(target_os = "macos")]
     let (pos_x, pos_y) = {
         use core_graphics::display::CGDisplay;
         let bounds = CGDisplay::main().bounds();
@@ -514,7 +511,6 @@ async fn handle_recording_stop(
     let _ = std::fs::remove_file(audio_path);
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load settings at startup
     let loaded_settings = settings::load_settings();
@@ -537,7 +533,6 @@ pub fn run() {
             settings: loaded_settings,
         }))
         .setup(move |app| {
-            #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
 
             // Hide window when it loses focus (click outside)

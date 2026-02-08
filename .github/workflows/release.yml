@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  BUN_VERSION: "1.2.4"
+
 jobs:
   build:
     name: Build macOS App
@@ -18,7 +21,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.4
+          bun-version: ${{ env.BUN_VERSION }}
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable

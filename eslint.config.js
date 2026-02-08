@@ -39,6 +39,6 @@ export default [
   },
   prettier,
   {
-    ignores: ["dist/", "src-tauri/", "node_modules/", "*.config.js", "*.config.ts"],
+    ignores: ["dist/", "src-tauri/", "node_modules/", "vite.config.ts", "vitest.config.ts"],
   },
 ];

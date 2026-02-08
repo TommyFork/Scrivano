@@ -16,7 +16,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -53,8 +53,8 @@
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
-      "prettier --write",
-      "eslint --fix"
+      "eslint --fix",
+      "prettier --write"
     ],
     "src/**/*.css": [
       "prettier --write"
