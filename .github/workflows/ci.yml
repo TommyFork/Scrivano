@@ -32,6 +32,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  BUN_VERSION: "1.2.4"
 
 jobs:
   # Frontend: Type check, build, and test
@@ -44,12 +45,15 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.4
+          bun-version: ${{ env.BUN_VERSION }}
           cache: true
           cache-dependency-path: bun.lock
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        run: bun run format:check
 
       - name: Type check
         run: bun run tsc --noEmit
@@ -63,32 +67,15 @@ jobs:
       - name: Test
         run: bun run test:run
 
-  # Rust: Check, lint, and test
+  # Rust: Check, lint, and test (macOS-only — needs CoreGraphics, Cocoa, etc.)
   rust:
     name: Rust (Check, Clippy, Test)
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     defaults:
       run:
         working-directory: src-tauri
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cache apt packages
-        uses: actions/cache@v4
-        id: apt-cache
-        with:
-          path: ~/apt-cache
-          key: ${{ runner.os }}-apt-tauri-deps-v1
-
-      - name: Install system dependencies
-        run: |
-          if [ "${{ steps.apt-cache.outputs.cache-hit }}" = "true" ]; then
-            sudo cp ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
-          fi
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
-          mkdir -p ~/apt-cache
-          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable

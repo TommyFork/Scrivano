@@ -150,10 +150,7 @@ export function formatKey(key: string): string {
 /**
  * Format shortcut for display
  */
-export function formatShortcutForDisplay(
-  modifiers: string[],
-  key: string
-): string {
+export function formatShortcutForDisplay(modifiers: string[], key: string): string {
   const modParts = modifiers.map((m) => MOD_SYMBOLS[m] || m);
   const keyPart = key ? formatKey(key) : "";
   return modParts.join("") + keyPart;
